@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        choice(name: 'PLAYBOOK', choices: ['03_deploy_monitoring.yml', '05_deploy_cicd.yml', '06_deploy_registry.yml', '07_deploy_argocd.yml', '07_deploy_argocd_apps.yml'], description: 'Select the App/CICD playbook to run')
+        choice(name: 'PLAYBOOK', choices: ['03_deploy_monitoring.yml', '05_deploy_cicd.yml', '05_configure_jenkins_ssh.yml', '06_deploy_registry.yml', '07_deploy_argocd.yml', '07_deploy_argocd_apps.yml', '07_reset_argocd_apps.yml'], description: 'Select the App/CICD playbook to run')
         string(name: 'LIMIT', defaultValue: 'all', description: 'Target hosts limit (e.g. PC5). Default: all')
         booleanParam(name: 'DRY_RUN', defaultValue: false, description: 'Run in check mode (dry-run)?')
     }
@@ -16,6 +16,15 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
+            }
+        }
+
+        stage('Pre-flight Check') {
+            steps {
+                script {
+                   echo '🔍 Checking connectivity...'
+                   sh 'ansible all -i inventory.ini -m ping -l "${LIMIT}"'
+                }
             }
         }
 
