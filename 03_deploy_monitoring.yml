@@ -130,6 +130,19 @@
         enabled: yes
       ignore_errors: yes
 
+    - name: iptables 서비스 중지 및 비활성화 (Firewalld 충돌 방지)
+      service:
+        name: iptables
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+
+    - name: firewalld 서비스 Unmask (활성화 불가 문제 해결)
+      systemd:
+        name: firewalld
+        masked: no
+      ignore_errors: yes
+
     - name: firewalld 서비스 시작 및 활성화
       service:
         name: firewalld
@@ -202,17 +215,23 @@
   hosts: DNS
   become: yes
   tasks:
-    - name: Monitoring 네트워크(10.2.2.50/32)로 가는 정적 라우팅 추가 (via WAF)
+    # [Safety] Ansible Controller(10.2.2.40)와는 직접 통신 (SSH 끊김 방지)
+    - name: Ansible Controller(10.2.2.40/32) 직접 통신 경로 확보
+      shell: |
+        ip route add 10.2.2.40/32 dev ens160 scope link metric 10 || true
+      ignore_errors: yes
+
+    - name: 내부 네트워크(10.2.2.0/24) 전체 WAF 경유 설정 (User Intent)
       nmcli:
         conn_name: "ens160"
         type: ethernet
-        routes4: "10.2.2.50/32 10.2.1.2"
+        routes4: "10.2.2.0/24 10.2.1.2"
         state: present
       ignore_errors: yes
       
-    - name: Monitoring 네트워크(10.2.2.50/32) 라우팅 확인 및 추가 (ip route)
+    - name: 내부 네트워크(10.2.2.0/24) 라우팅 확인 (ip route)
       shell: |
-        ip route add 10.2.2.50/32 via 10.2.1.2 dev ens160 || true
+        ip route add 10.2.2.0/24 via 10.2.1.2 dev ens160 || true
       ignore_errors: yes
 
 # [4단계] 외부 접속 설정 (SECURE -> Monitoring 포트 포워딩)
