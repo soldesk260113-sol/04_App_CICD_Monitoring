@@ -126,7 +126,7 @@ printf "  → %s : " "$PROXY_HOST"
 
 # Jenkins 컨테이너에서 Proxy 호스트로 키 배포
 PROXY_RESULT=$(timeout 15 docker exec $JENKINS_CONTAINER bash -c "
-    SSH_OPTS='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5'
+    SSH_OPTS='-i /var/jenkins_home/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5'
     
     if timeout 10 sshpass -p '$PASSWORD' ssh \$SSH_OPTS ansible@$PROXY_HOST \"
         mkdir -p ~/.ssh && chmod 700 ~/.ssh
@@ -177,8 +177,8 @@ for ip in "${SERVERS[@]}"; do
     
     # Jenkins 컨테이너 내부에서 SSH 키 배포 실행 (타임아웃 30초)
     RESULT=$(timeout 30 docker exec $JENKINS_CONTAINER bash -c "
-        # SSH 기본 옵션 (타임아웃 5초로 단축)
-        SSH_OPTS='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ServerAliveInterval=2 -o ServerAliveCountMax=2'
+        # SSH 기본 옵션 (타임아웃 5초로 단축, IdentityFile 명시)
+        SSH_OPTS='-i /var/jenkins_home/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ServerAliveInterval=2 -o ServerAliveCountMax=2'
         
         # 프록시 설정 (ProxyJump 사용)
         if [ '$USE_PROXY' = 'yes' ]; then
