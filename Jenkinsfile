@@ -16,6 +16,15 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
+        }
+
+        stage('SSH Auto-Heal (Distribute Keys)') {
+            steps {
+                script {
+                   echo '🚑 SSH 연결 자가 치유 (Self-Healing) 시작...'
+                   sh 'chmod +x Script/jenkins_distribute_ssh_ansible.sh'
+                   sh './Script/jenkins_distribute_ssh_ansible.sh'
+                }
             }
         }
 
