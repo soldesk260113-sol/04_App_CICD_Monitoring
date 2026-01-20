@@ -99,13 +99,13 @@ echo ""
 # ───────────────────────────────────────────────────────────────────────────
 echo "[3/6] Jenkins SSH 키 확인 및 생성..."
 docker exec $JENKINS_CONTAINER bash -c "
-    if [ ! -f /var/jenkins_home/.ssh/id_rsa ]; then
+    if [ ! -f /var/jenkins_home/.ssh/id_ed25519 ]; then
         echo '  → SSH 키가 없습니다. 새로 생성합니다...'
         mkdir -p /var/jenkins_home/.ssh
-        ssh-keygen -t rsa -b 2048 -N '' -f /var/jenkins_home/.ssh/id_rsa -C 'jenkins@antigravity'
+        ssh-keygen -t ed25519 -N '' -f /var/jenkins_home/.ssh/id_ed25519 -C 'jenkins@antigravity'
         chmod 700 /var/jenkins_home/.ssh
-        chmod 600 /var/jenkins_home/.ssh/id_rsa
-        chmod 644 /var/jenkins_home/.ssh/id_rsa.pub
+        chmod 600 /var/jenkins_home/.ssh/id_ed25519
+        chmod 644 /var/jenkins_home/.ssh/id_ed25519.pub
         echo '  → SSH 키 생성 완료'
     else
         echo '  → 기존 SSH 키 사용'
@@ -113,7 +113,8 @@ docker exec $JENKINS_CONTAINER bash -c "
 "
 
 # Jenkins 공개키 가져오기
-JENKINS_PUB_KEY=$(docker exec $JENKINS_CONTAINER cat /var/jenkins_home/.ssh/id_rsa.pub)
+# Jenkins 공개키 가져오기
+JENKINS_PUB_KEY=$(docker exec $JENKINS_CONTAINER cat /var/jenkins_home/.ssh/id_ed25519.pub)
 echo "  → 공개키: ${JENKINS_PUB_KEY:0:60}..."
 echo ""
 

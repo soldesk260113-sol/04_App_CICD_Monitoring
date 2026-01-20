@@ -202,17 +202,17 @@
   hosts: DNS
   become: yes
   tasks:
-    - name: Monitoring 네트워크(10.2.2.0/24)로 가는 정적 라우팅 추가 (via WAF)
+    - name: Monitoring 네트워크(10.2.2.50/32)로 가는 정적 라우팅 추가 (via WAF)
       nmcli:
         conn_name: "ens160"
         type: ethernet
-        routes4: "10.2.2.0/24 10.2.1.2"
+        routes4: "10.2.2.50/32 10.2.1.2"
         state: present
       ignore_errors: yes
       
-    - name: Monitoring 네트워크(10.2.2.0/24) 라우팅 확인 및 추가 (ip route)
+    - name: Monitoring 네트워크(10.2.2.50/32) 라우팅 확인 및 추가 (ip route)
       shell: |
-        ip route add 10.2.2.0/24 via 10.2.1.2 dev ens160 || true
+        ip route add 10.2.2.50/32 via 10.2.1.2 dev ens160 || true
       ignore_errors: yes
 
 # [4단계] 외부 접속 설정 (SECURE -> Monitoring 포트 포워딩)
