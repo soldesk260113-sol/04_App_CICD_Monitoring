@@ -23,26 +23,62 @@ DB_SERVERS=("10.2.3.2" "10.2.3.3" "10.2.3.4" "10.2.3.20" "10.2.3.21" "10.2.3.22"
 # Helper Functions
 # ═══════════════════════════════════════════════════════════════════════════
 
+detect_key() {
+    # Detect Public Key (ED25519 preferred, then RSA)
+    if [ -f ~/.ssh/id_ed25519.pub ]; then
+        DETECTED_PUB_KEY=$(cat ~/.ssh/id_ed25519.pub)
+        DETECTED_KEY_FILE="~/.ssh/id_ed25519"
+        echo "ℹ️  Using ED25519 key"
+    elif [ -f ~/.ssh/id_rsa.pub ]; then
+        DETECTED_PUB_KEY=$(cat ~/.ssh/id_rsa.pub)
+        DETECTED_KEY_FILE="~/.ssh/id_rsa"
+        echo "ℹ️  Using RSA key"
+    else
+        echo "❌ No suitable SSH key found (id_ed25519.pub or id_rsa.pub)!"
+        exit 1
+    fi
+}
+
+deploy_key_to_list() {
+    local LIST_NAME=$1
+    shift
+    local IPS=("$@")
+    local SSH_OPTS=("-o" "StrictHostKeyChecking=no" "-o" "UserKnownHostsFile=/dev/null" "-o" "ConnectTimeout=10")
+
+    echo "📦 Deploying SSH key to $LIST_NAME..."
+
+    for IP in "${IPS[@]}"; do
+        echo "  → $IP"
+        # Deploy to root
+        sshpass -p "$PASSWORD" ssh "${SSH_OPTS[@]}" root@$IP \
+            "mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qF \"$DETECTED_PUB_KEY\" ~/.ssh/authorized_keys 2>/dev/null || echo \"$DETECTED_PUB_KEY\" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && restorecon -R -v ~/.ssh 2>/dev/null || true"
+        
+        # Deploy to ansible user
+        sshpass -p "$PASSWORD" ssh "${SSH_OPTS[@]}" root@$IP \
+            "mkdir -p /home/ansible/.ssh && echo \"$DETECTED_PUB_KEY\" >> /home/ansible/.ssh/authorized_keys && chown -R ansible:ansible /home/ansible/.ssh && chmod 700 /home/ansible/.ssh && chmod 600 /home/ansible/.ssh/authorized_keys && restorecon -R -v /home/ansible/.ssh 2>/dev/null || true"
+        
+        [ $? -eq 0 ] && echo "    ✅ SUCCESS" || echo "    ❌ FAIL"
+    done
+}
+
 deploy_key_to_single() {
     local IP=$1
-    local PUB_KEY=$(cat ~/.ssh/id_rsa.pub)
     local SSH_OPTS=("-o" "StrictHostKeyChecking=no" "-o" "UserKnownHostsFile=/dev/null" "-o" "ConnectTimeout=10")
     
     echo "📦 Deploying SSH key to $IP..."
     
     # Deploy to root
     sshpass -p "$PASSWORD" ssh "${SSH_OPTS[@]}" root@$IP \
-        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qF \"$PUB_KEY\" ~/.ssh/authorized_keys 2>/dev/null || echo \"$PUB_KEY\" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && restorecon -R -v ~/.ssh 2>/dev/null || true"
+        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qF \"$DETECTED_PUB_KEY\" ~/.ssh/authorized_keys 2>/dev/null || echo \"$DETECTED_PUB_KEY\" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && restorecon -R -v ~/.ssh 2>/dev/null || true"
     [ $? -eq 0 ] && echo "  ✅ Root: OK" || echo "  ❌ Root: FAIL"
     
     # Deploy to ansible user
     sshpass -p "$PASSWORD" ssh "${SSH_OPTS[@]}" ansible@$IP \
-        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qF \"$PUB_KEY\" ~/.ssh/authorized_keys 2>/dev/null || echo \"$PUB_KEY\" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && restorecon -R -v ~/.ssh 2>/dev/null || true"
+        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qF \"$DETECTED_PUB_KEY\" ~/.ssh/authorized_keys 2>/dev/null || echo \"$DETECTED_PUB_KEY\" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && restorecon -R -v ~/.ssh 2>/dev/null || true"
     [ $? -eq 0 ] && echo "  ✅ Ansible: OK" || echo "  ❌ Ansible: FAIL"
 }
 
 deploy_key_to_db_via_proxy() {
-    local PUB_KEY=$(cat ~/.ssh/id_rsa.pub)
     local PROXY_CMD="ssh -o StrictHostKeyChecking=no -W %h:%p -q root@$PROXY_HOST"
     
     echo "📦 Deploying SSH key to DB servers (via ProxyJump)..."
@@ -50,7 +86,7 @@ deploy_key_to_db_via_proxy() {
     for IP in "${DB_SERVERS[@]}"; do
         echo "  → $IP"
         sshpass -p "$PASSWORD" ssh -o ProxyCommand="$PROXY_CMD" -o StrictHostKeyChecking=no root@$IP \
-            "mkdir -p /home/ansible/.ssh && echo \"$PUB_KEY\" >> /home/ansible/.ssh/authorized_keys && chown -R ansible:ansible /home/ansible/.ssh && chmod 700 /home/ansible/.ssh && chmod 600 /home/ansible/.ssh/authorized_keys && restorecon -R -v /home/ansible/.ssh 2>/dev/null || true"
+            "mkdir -p /home/ansible/.ssh && echo \"$DETECTED_PUB_KEY\" >> /home/ansible/.ssh/authorized_keys && chown -R ansible:ansible /home/ansible/.ssh && chmod 700 /home/ansible/.ssh && chmod 600 /home/ansible/.ssh/authorized_keys && restorecon -R -v /home/ansible/.ssh 2>/dev/null || true"
         [ $? -eq 0 ] && echo "    ✅ SUCCESS" || echo "    ❌ FAIL"
     done
 }
@@ -139,7 +175,15 @@ deploy_jenkins_key_to_db() {
         exit 1
     fi
     
-    local JENKINS_KEY=$(docker exec jenkins cat /root/.ssh/id_rsa.pub 2>/dev/null)
+    if ! docker exec jenkins test -f /var/jenkins_home/.ssh/id_ed25519; then
+         # Fallback to RSA if ed25519 not found in Jenkins
+         local JENKINS_KEY=$(docker exec jenkins cat /var/jenkins_home/.ssh/id_rsa.pub 2>/dev/null)
+         local KEY_TYPE="rsa"
+    else
+         local JENKINS_KEY=$(docker exec jenkins cat /var/jenkins_home/.ssh/id_ed25519.pub 2>/dev/null)
+         local KEY_TYPE="ed25519"
+    fi
+    
     if [ -z "$JENKINS_KEY" ]; then
         echo "❌ Failed to get Jenkins SSH key!"
         exit 1
@@ -147,7 +191,7 @@ deploy_jenkins_key_to_db() {
     
     local PROXY_CMD="ssh -o StrictHostKeyChecking=no -W %h:%p -q root@$PROXY_HOST"
     
-    echo "🐳 Deploying Jenkins container SSH key to DB servers..."
+    echo "🐳 Deploying Jenkins container SSH key ($KEY_TYPE) to DB servers..."
     echo "Jenkins Key: ${JENKINS_KEY:0:50}..."
     echo ""
     
@@ -161,13 +205,22 @@ deploy_jenkins_key_to_db() {
     echo ""
     echo "🔍 Verification: Testing Jenkins container SSH access..."
     for IP in "${DB_SERVERS[@]}"; do
-        docker exec jenkins ssh -o ProxyCommand='ssh -W %h:%p -q root@10.2.2.20' -o StrictHostKeyChecking=no ansible@$IP 'echo "  ✅ '$IP': OK"' 2>/dev/null || echo "  ❌ $IP: FAIL"
+        if [ "$KEY_TYPE" == "ed25519" ]; then
+             docker exec jenkins ssh -o ProxyCommand='ssh -W %h:%p -q root@10.2.2.20' -i /var/jenkins_home/.ssh/id_ed25519 -o StrictHostKeyChecking=no ansible@$IP 'echo "  ✅ '$IP': OK"' 2>/dev/null || echo "  ❌ $IP: FAIL"
+        else
+             docker exec jenkins ssh -o ProxyCommand='ssh -W %h:%p -q root@10.2.2.20' -o StrictHostKeyChecking=no ansible@$IP 'echo "  ✅ '$IP': OK"' 2>/dev/null || echo "  ❌ $IP: FAIL"
+        fi
     done
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Main Logic
 # ═══════════════════════════════════════════════════════════════════════════
+
+# Initialize Key Detection
+if [[ "$1" != "jenkins-to-db" ]]; then
+    detect_key
+fi
 
 MODE=${1:-}
 TARGET=${2:-}
