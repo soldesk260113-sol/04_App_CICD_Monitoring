@@ -148,9 +148,7 @@
     - monitoring
     - node_exporter
 
-  tags:
-    - monitoring
-    - node_exporter
+
 
 # 2.5단계: etcd 메트릭 포트 열기 (Prometheus 수집용)
 - name: etcd 메트릭 포트 열기 (2379/tcp)
