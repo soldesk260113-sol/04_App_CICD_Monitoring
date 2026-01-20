@@ -16,6 +16,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
+            }
         }
 
         stage('SSH Auto-Heal (Distribute Keys)') {
