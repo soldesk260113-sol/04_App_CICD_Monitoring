@@ -3,41 +3,53 @@
   include_role:
     name: docker
 
+- name: 1.1. Jenkins 컨테이너 실행 여부 확인
+  shell: docker ps --filter "name=jenkins" --filter "status=running" --format "{{ '{{' }}.Names{{ '}}' }}"
+  register: jenkins_running_check
+  changed_when: false
+  ignore_errors: yes
+
 - name: 2. Jenkins 스택 디렉토리 생성
   file:
     path: /opt/jenkins_stack
     state: directory
     mode: '0755'
+  when: jenkins_running_check.stdout != "jenkins"
 
 - name: 3. Jenkins 홈 디렉토리 생성
   file:
     path: /opt/jenkins_home
     state: directory
     mode: '0777'
+  when: jenkins_running_check.stdout != "jenkins"
 
 - name: 3.1. Jenkins Init 스크립트 디렉토리 생성
   file:
     path: /opt/jenkins_home/init.groovy.d
     state: directory
     mode: '0777'
+  when: jenkins_running_check.stdout != "jenkins"
 
 - name: 3.2. Jenkins 초기 계정 생성 스크립트 배포
   template:
     src: basic-security.groovy.j2
     dest: /opt/jenkins_home/init.groovy.d/basic-security.groovy
     mode: '0644'
+  when: jenkins_running_check.stdout != "jenkins"
 
 - name: 4. Docker Compose 파일 배포
   template:
     src: docker-compose.yml.j2
     dest: /opt/jenkins_stack/docker-compose.yml
     mode: '0644'
+  when: jenkins_running_check.stdout != "jenkins"
 
 - name: 4.1. Dockerfile 배포 (Ansible 포함 커스텀 이미지)
   template:
     src: Dockerfile.j2
     dest: /opt/jenkins_stack/Dockerfile
     mode: '0644'
+  when: jenkins_running_check.stdout != "jenkins"
 
 - name: 5. Jenkins 컨테이너 실행 (Docker Compose)
   shell: |
@@ -46,6 +58,12 @@
     docker compose up -d --build
   register: compose_result
   changed_when: true
+  when: jenkins_running_check.stdout != "jenkins"
+
+- name: 5.1. Jenkins 이미 실행 중 알림
+  debug:
+    msg: "Jenkins 컨테이너가 이미 실행 중이므로 배포 단계를 건너뜁니다."
+  when: jenkins_running_check.stdout == "jenkins"
 
 - name: 6. 호스트에 Git CLI 설치
   dnf:
