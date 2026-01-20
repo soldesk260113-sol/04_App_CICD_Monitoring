@@ -165,63 +165,134 @@ FAIL_COUNT=0
 SKIP_COUNT=0
 FAILED_SERVERS=()
 
+# Temp directory for status files
+STATUS_DIR=$(mktemp -d)
+trap "rm -rf $STATUS_DIR" EXIT
+
 for ip in "${SERVERS[@]}"; do
-    printf "%-20s : " "$ip"
-    
-    # 10.2.3.x 서브넷은 프록시 사용
-    if [[ "$ip" == 10.2.3.* ]]; then
-        USE_PROXY="yes"
-    else
-        USE_PROXY="no"
-    fi
-    
-    # Jenkins 컨테이너 내부에서 SSH 키 배포 실행 (타임아웃 30초)
-    RESULT=$(timeout 30 docker exec $JENKINS_CONTAINER bash -c "
-        # SSH 기본 옵션 (타임아웃 5초로 단축, IdentityFile 명시)
-        SSH_OPTS='-i /var/jenkins_home/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ServerAliveInterval=2 -o ServerAliveCountMax=2'
-        
-        # 프록시 설정 (ProxyJump 사용)
-        if [ '$USE_PROXY' = 'yes' ]; then
-            SSH_OPTS=\"\$SSH_OPTS -o ProxyJump=ansible@$PROXY_HOST\"
-        fi
-        
-        # 키 배포 시도 (타임아웃 시 자동 실패)
-        if timeout 10 sshpass -p '$PASSWORD' ssh \$SSH_OPTS ansible@$ip \"
-            mkdir -p ~/.ssh && chmod 700 ~/.ssh
-            grep -qF '$JENKINS_PUB_KEY' ~/.ssh/authorized_keys 2>/dev/null || echo '$JENKINS_PUB_KEY' >> ~/.ssh/authorized_keys
-            chmod 600 ~/.ssh/authorized_keys
-            restorecon -R -v ~/.ssh 2>/dev/null || true
-        \" &>/dev/null; then
-            # 무암호 접속 확인
-            if timeout 5 ssh \$SSH_OPTS -o PasswordAuthentication=no -o PubkeyAuthentication=yes ansible@$ip 'exit 0' &>/dev/null; then
-                echo 'SUCCESS'
-            else
-                echo 'VERIFY_FAILED'
-            fi
+    (
+        # 10.2.3.x 서브넷은 프록시 사용
+        if [[ "$ip" == 10.2.3.* ]]; then
+            USE_PROXY="yes"
         else
-            echo 'DEPLOY_FAILED'
+            USE_PROXY="no"
         fi
-    " 2>&1 | tail -1)
-    
-    EXIT_CODE=$?
-    
-    # 결과 처리
-    if [ $EXIT_CODE -eq 124 ]; then
-        # timeout 명령어의 종료 코드 124 = 타임아웃
-        echo "⏱️  타임아웃 (서버 꺼짐?)"
-        ((SKIP_COUNT++))
-    elif [ "$RESULT" = "SUCCESS" ]; then
-        echo "✅ 성공"
-        ((SUCCESS_COUNT++))
-    elif [ "$RESULT" = "VERIFY_FAILED" ]; then
-        echo "⚠️  배포됨 (검증 실패)"
-        ((SUCCESS_COUNT++))
+        
+        # Jenkins 컨테이너 내부에서 SSH 키 배포 실행 (타임아웃 30초)
+        RESULT=$(timeout 30 docker exec $JENKINS_CONTAINER bash -c "
+            # SSH 기본 옵션 (타임아웃 5초로 단축, IdentityFile 명시)
+            SSH_OPTS='-i /var/jenkins_home/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ServerAliveInterval=2 -o ServerAliveCountMax=2'
+            
+            # 프록시 설정 (ProxyJump 사용)
+            if [ '$USE_PROXY' = 'yes' ]; then
+                SSH_OPTS=\"\$SSH_OPTS -o ProxyJump=ansible@$PROXY_HOST\"
+            fi
+            
+            # 키 배포 시도 (타임아웃 시 자동 실패)
+            if timeout 10 sshpass -p '$PASSWORD' ssh \$SSH_OPTS ansible@$ip \"
+                mkdir -p ~/.ssh && chmod 700 ~/.ssh
+                grep -qF '$JENKINS_PUB_KEY' ~/.ssh/authorized_keys 2>/dev/null || echo '$JENKINS_PUB_KEY' >> ~/.ssh/authorized_keys
+                chmod 600 ~/.ssh/authorized_keys
+                restorecon -R -v ~/.ssh 2>/dev/null || true
+            \" &>/dev/null; then
+                # 무암호 접속 확인
+                if timeout 5 ssh \$SSH_OPTS -o PasswordAuthentication=no -o PubkeyAuthentication=yes ansible@$ip 'exit 0' 2>/tmp/ssh_verify_error_$ip; then
+                    echo 'SUCCESS'
+                else
+                    echo 'VERIFY_FAILED'
+                fi
+            else
+                echo 'DEPLOY_FAILED'
+            fi
+        " 2>&1)
+        
+        if [[ "$RESULT" == *"SUCCESS"* ]]; then
+             printf "%-20s : ✅ 성공\n" "$ip"
+             echo "SUCCESS" > "$STATUS_DIR/$ip"
+        elif [[ "$RESULT" == *"VERIFY_FAILED"* ]]; then
+             printf "%-20s : ⚠️  배포됨 (검증 실패)\n" "$ip"
+             echo "VERIFY_FAILED" > "$STATUS_DIR/$ip"
+        else
+             printf "%-20s : ❌ 실패\n" "$ip"
+             echo "FAIL" > "$STATUS_DIR/$ip"
+        fi
+    ) &
+done
+
+wait
+
+# 결과 집계
+for ip in "${SERVERS[@]}"; do
+    if [ -f "$STATUS_DIR/$ip" ]; then
+        STATUS=$(cat "$STATUS_DIR/$ip")
+        if [ "$STATUS" == "SUCCESS" ] || [ "$STATUS" == "VERIFY_FAILED" ]; then
+            ((SUCCESS_COUNT++))
+        else
+            ((FAIL_COUNT++))
+            FAILED_SERVERS+=("$ip")
+        fi
     else
-        echo "❌ 실패 (재시도 예정)"
-        ((FAIL_COUNT++))
-        FAILED_SERVERS+=("$ip")
+        ((SKIP_COUNT++))
     fi
 done
+
+echo "───────────────────────────────────────────────────────────────────────────"
+echo ""
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 5: 실패한 서버들에 대해 현재 VM에서 재시도 (Parallel Retry)
+# ───────────────────────────────────────────────────────────────────────────
+if [ ${#FAILED_SERVERS[@]} -gt 0 ]; then
+    echo "[5/6] 실패한 서버들에 대해 현재 VM에서 재시도 (${#FAILED_SERVERS[@]}대)..."
+    echo "───────────────────────────────────────────────────────────────────────────"
+    
+    # Retry logic handles counts update inside loop but variables won't propagate from subshell.
+    # So we reuse status files for retry results.
+    
+    for ip in "${FAILED_SERVERS[@]}"; do
+        (
+            if sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 ansible@$ip "
+                mkdir -p ~/.ssh && chmod 700 ~/.ssh
+                grep -qF '$JENKINS_PUB_KEY' ~/.ssh/authorized_keys 2>/dev/null || echo '$JENKINS_PUB_KEY' >> ~/.ssh/authorized_keys
+                chmod 600 ~/.ssh/authorized_keys
+            " &>/dev/null; then
+                printf "%-20s : ✅ 재시도 성공\n" "$ip"
+                echo "RETRY_SUCCESS" > "$STATUS_DIR/$ip"
+            else
+                printf "%-20s : ❌ 재시도 실패\n" "$ip"
+                echo "RETRY_FAIL" > "$STATUS_DIR/$ip"
+            fi
+        ) &
+    done
+    wait
+    
+    echo "───────────────────────────────────────────────────────────────────────────"
+    echo ""
+    
+    # Re-tally after retry
+    SUCCESS_COUNT=0
+    FAIL_COUNT=0
+    SKIP_COUNT=0
+    
+    for ip in "${SERVERS[@]}"; do
+        if [ -f "$STATUS_DIR/$ip" ]; then
+            STATUS=$(cat "$STATUS_DIR/$ip")
+            if [ "$STATUS" == "SUCCESS" ] || [ "$STATUS" == "VERIFY_FAILED" ] || [ "$STATUS" == "RETRY_SUCCESS" ]; then
+                ((SUCCESS_COUNT++))
+            else
+                ((FAIL_COUNT++))
+            fi
+        else
+            ((SKIP_COUNT++))
+        fi
+    done
+
+else
+    echo "[5/6] 재시도가 필요한 서버 없음"
+    echo ""
+fi
+
+
 
 echo "───────────────────────────────────────────────────────────────────────────"
 echo ""
