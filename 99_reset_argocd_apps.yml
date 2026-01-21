@@ -1,3 +1,5 @@
+# cd Antigravity/Ansible/04_App_CICD_Monitoring/
+# ansible-playbook -i inventory.ini 99_reset_argocd_apps.yml
 # ═══════════════════════════════════════════════════════════════════════════
 # Playbook 99: Reset ArgoCD Applications - ArgoCD 앱 초기화
 # ═══════════════════════════════════════════════════════════════════════════

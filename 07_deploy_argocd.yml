@@ -29,9 +29,22 @@
   hosts: SECURE
   become: yes
   tasks:
-    - name: NodePort 전체 범위 (30000-32767) 포트포워딩 설정
-      shell: |
-        firewall-cmd --permanent --zone=public --add-forward-port=port=30000-32767:proto=tcp:toaddr=10.2.2.2
-        firewall-cmd --permanent --zone=public --add-port=30000-32767/tcp
-        firewall-cmd --reload
-      ignore_errors: yes
+    # 1. NodePort 범위(30000-32767) 포트 개방
+    - name: NodePort 전체 범위 개방 (30000-32767)
+      ansible.posix.firewalld:
+        zone: public
+        port: 30000-32767/tcp
+        permanent: yes
+        state: enabled
+        immediate: yes
+
+    # 2. NodePort 범위 포트포워딩 (Gateway -> K8S Master)
+    # 참고: firewalld 모듈에서 포트 범위 포워딩을 단순하게 처리하기 어렵거나 
+    # toaddr/toport 조합이 복잡할 수 있어 rich_rule을 사용합니다.
+    - name: NodePort 전체 범위 포트포워딩 설정 (to 10.2.2.2)
+      ansible.posix.firewalld:
+        zone: public
+        rich_rule: 'rule family="ipv4" forward-port port="30000-32767" protocol="tcp" to-addr="10.2.2.2"'
+        permanent: yes
+        state: enabled
+        immediate: yes
