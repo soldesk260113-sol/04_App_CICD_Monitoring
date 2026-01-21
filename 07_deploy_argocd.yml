@@ -48,3 +48,20 @@
         permanent: yes
         state: enabled
         immediate: yes
+
+- name: ArgoCD 노드 격리 (W3 - Management Node)
+  hosts: K8S_Primary_Master
+  become: yes
+  tasks:
+    - name: Patch ArgoCD Components with Node Affinity (role=argocd)
+      shell: |
+        kubectl patch {{ item.kind }} {{ item.name }} -n argocd --type='merge' -p '{"spec": {"template": {"spec": {"affinity": {"nodeAffinity": {"requiredDuringSchedulingIgnoredDuringExecution": {"nodeSelectorTerms": [{"matchExpressions": [{"key": "role", "operator": "In", "values": ["argocd"]}]}]}}}}}}}'
+      loop:
+        - { kind: "deployment", name: "argocd-server" }
+        - { kind: "deployment", name: "argocd-repo-server" }
+        - { kind: "deployment", name: "argocd-dex-server" }
+        - { kind: "deployment", name: "argocd-redis" }
+        - { kind: "deployment", name: "argocd-notifications-controller" }
+        - { kind: "deployment", name: "argocd-applicationset-controller" }
+        - { kind: "statefulset", name: "argocd-application-controller" }
+
