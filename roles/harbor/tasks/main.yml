@@ -95,6 +95,26 @@
       - "관리자 비밀번호: {{ harbor_admin_password }}"
       - "Docker 로그인: docker login {{ harbor_hostname }}:{{ harbor_http_port }}"
 
+# [추가됨] Production 네임스페이스가 없으면 에러가 나므로 먼저 확인/생성합니다.
+- name: 13. K8S Production 네임스페이스 확인 및 생성
+  shell: |
+    kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
+  delegate_to: K8S-ControlPlane1  # ⚠️ 중요: kubectl 명령어가 되는 서버 호스트명으로 변경하세요
+  run_once: true
+
+# [추가됨] 요청하신 Secret 생성 부분 (Idempotency를 위해 dry-run | apply 방식 적용)
+- name: 14. K8S Harbor Secret 생성 (harbor-secret)
+  shell: |
+    kubectl create secret docker-registry harbor-secret \
+      --docker-server=10.2.2.40:5000 \
+      --docker-username=admin \
+      --docker-password=Admin123 \
+      --docker-email=admin@example.com \
+      -n production \
+      --dry-run=client -o yaml | kubectl apply -f -
+  delegate_to: K8S-ControlPlane1  # ⚠️ 중요: kubectl 명령어가 되는 서버 호스트명으로 변경하세요
+  run_once: true
+  
 - name: Harbor 포트 포워딩 (172.16.6.61:5000 -> 10.2.2.40:5000)
   firewalld:
     rich_rule: 'rule family="ipv4" forward-port port="5000" protocol="tcp" to-port="5000" to-addr="10.2.2.40"'
