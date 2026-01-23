@@ -5,6 +5,17 @@
 - name: CI/CD 서버 구성 (Gitea + Jenkins)
   hosts: CICD-OPS
   become: yes
+  pre_tasks:
+    - name: Firewalld 설치 확인
+      dnf:
+        name: firewalld
+        state: present
+
+    - name: Firewalld 서비스 시작 및 활성화
+      service:
+        name: firewalld
+        state: started
+        enabled: yes
   roles:
     - gitea
     - jenkins

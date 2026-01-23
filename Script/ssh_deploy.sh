@@ -72,11 +72,11 @@ deploy_key_to_single() {
         "mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qF \"$DETECTED_PUB_KEY\" ~/.ssh/authorized_keys 2>/dev/null || echo \"$DETECTED_PUB_KEY\" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && restorecon -R -v ~/.ssh 2>/dev/null || true"
     [ $? -eq 0 ] && echo "  ✅ Root: OK" || echo "  ❌ Root: FAIL"
     
-    # Deploy to ansible user
-    sshpass -p "$PASSWORD" ssh "${SSH_OPTS[@]}" ansible@$IP \
-        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qF \"$DETECTED_PUB_KEY\" ~/.ssh/authorized_keys 2>/dev/null || echo \"$DETECTED_PUB_KEY\" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && restorecon -R -v ~/.ssh 2>/dev/null || true"
+    # Deploy to ansible user (via Root to bypass password issue)
+    sshpass -p "$PASSWORD" ssh "${SSH_OPTS[@]}" root@$IP \
+        "mkdir -p /home/ansible/.ssh && echo \"$DETECTED_PUB_KEY\" >> /home/ansible/.ssh/authorized_keys && chown -R ansible:ansible /home/ansible/.ssh && chmod 700 /home/ansible/.ssh && chmod 600 /home/ansible/.ssh/authorized_keys && restorecon -R -v /home/ansible/.ssh 2>/dev/null || true"
     [ $? -eq 0 ] && echo "  ✅ Ansible: OK" || echo "  ❌ Ansible: FAIL"
-}
+ }
 
 deploy_key_to_db_via_proxy() {
     local PROXY_CMD="ssh -o StrictHostKeyChecking=no -W %h:%p -q root@$PROXY_HOST"
