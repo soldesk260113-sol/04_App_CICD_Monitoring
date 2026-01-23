@@ -70,21 +70,16 @@
   debug:
     msg: "{{ harbor_status.stdout_lines }}"
 
-- name: 10. Firewall 포트 개방 (Harbor HTTP)
-  firewalld:
-    port: "{{ harbor_http_port }}/tcp"
+- name: 11. Firewall 포트 개방 (Harbor HTTP/HTTPS)
+  ansible.posix.firewalld:
+    port: "{{ item }}/tcp"
     permanent: yes
     state: enabled
     immediate: yes
-  when: ansible_facts['os_family'] == "RedHat"
-
-- name: 11. Firewall 포트 개방 (Harbor HTTPS)
-  firewalld:
-    port: "{{ harbor_https_port }}/tcp"
-    permanent: yes
-    state: enabled
-    immediate: yes
-  when: ansible_facts['os_family'] == "RedHat" and harbor_https_enabled
+  loop:
+    - "{{ harbor_http_port }}"
+    - "{{ harbor_https_port if harbor_https_enabled else omit }}"
+  ignore_errors: yes
 
 - name: 12. Harbor 접속 정보 출력
   debug:
@@ -116,7 +111,7 @@
   run_once: true
   
 - name: Harbor 포트 포워딩 (172.16.6.61:5000 -> 10.2.2.40:5000)
-  firewalld:
+  ansible.posix.firewalld:
     rich_rule: 'rule family="ipv4" forward-port port="5000" protocol="tcp" to-port="5000" to-addr="10.2.2.40"'
     permanent: yes
     immediate: yes
