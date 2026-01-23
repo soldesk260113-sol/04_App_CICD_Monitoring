@@ -18,5 +18,8 @@
 # 5. ArgoCD (GitOps)
 - import_playbook: 07_deploy_argocd.yml
 
+# 5.5. App Dependencies (Secrets & Redis for Team2 Apps)
+- import_playbook: 08_deploy_app_dependencies.yml
+
 # 6. ArgoCD Apps (Initial App Deployment)
 - import_playbook: 07_deploy_argocd_apps.yml

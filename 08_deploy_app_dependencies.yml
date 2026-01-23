@@ -1,0 +1,53 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Playbook 08: Deploy App Dependencies - Secrets(API-Token) & Redis
+# ═══════════════════════════════════════════════════════════════════════════
+- name: Deploy App Dependencies (Secrets & Redis)
+  hosts: K8S_Primary_Master
+  become: yes
+  tasks:
+    - name: 1. Ensure 'production' namespace exists
+      shell: kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
+
+    # ───────────────────────────────────────────────────────────────────────────
+    # Redis 배포 (필수 의존성)
+    # ───────────────────────────────────────────────────────────────────────────
+    - name: 2. Deploy Redis (Deployment + Service)
+      shell: kubectl apply -f {{ item }}
+      loop:
+        - "{{ playbook_dir }}/k8s_manifests/redis.yaml"
+
+    # ───────────────────────────────────────────────────────────────────────────
+    # KMA API Secret 생성
+    # ───────────────────────────────────────────────────────────────────────────
+    - name: 3. Create 'kma-api-config' Secret
+      shell: |
+        kubectl create secret generic kma-api-config \
+          --namespace production \
+          --from-literal=KMA_AUTHKEY='MmNnsQppQqGjZ7EKaaKhgQ' \
+          --from-literal=DB_HOST='10.2.2.253' \
+          --from-literal=REDIS_HOST='redis-cache' \
+          --from-literal=REDIS_PORT='6379' \
+          --from-literal=REDIS_PREFIX='weather' \
+          --from-literal=REDIS_TTL_ULTRA_SECONDS='600' \
+          --from-literal=REDIS_TTL_SHORT_SECONDS='3600' \
+          --from-literal=TZ='Asia/Seoul' \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    # ───────────────────────────────────────────────────────────────────────────
+    # Energy API Secret 생성
+    # ───────────────────────────────────────────────────────────────────────────
+    - name: 4. Create 'energy-api-config' Secret
+      shell: |
+        kubectl create secret generic energy-api-config \
+          --namespace production \
+          --from-literal=EMP_API_KEY='8D4GI7rDQnO4ukBpn4QTbSeT5H9a8eahji7E2td5' \
+          --from-literal=DATA_GO_KR_SERVICE_KEY='93f2e3191276074224c438872e7cc3a95b6bcff3adbf538ceb8dba2938a233d5' \
+          --from-literal=KPX_ODCLOUD_DATASET_URL='https://api.odcloud.kr/api/15040818/v1/uddi:0873d163-4ed7-49f9-bf95-8eb5c7e35fad' \
+          --from-literal=TZ='Asia/Seoul' \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: 5. Restart Deployments to pick up new secrets (Optional)
+      shell: |
+        kubectl rollout restart deployment/kma-api -n production || true
+        kubectl rollout restart deployment/energy-api -n production || true
+      ignore_errors: yes
