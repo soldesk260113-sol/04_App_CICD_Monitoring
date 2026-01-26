@@ -2,6 +2,12 @@ global_defs {
     router_id {{ inventory_hostname }}
 }
 
+vrrp_script chk_monitoring {
+    script "pkill -0 prometheus" 
+    interval 2
+    weight -60
+}
+
 vrrp_instance VI_1 {
     state {{ 'MASTER' if inventory_hostname == 'Monitoring' else 'BACKUP' }}
     interface {{ nic1_interface | default('ens160') }}
@@ -16,5 +22,9 @@ vrrp_instance VI_1 {
     
     virtual_ipaddress {
         10.2.2.99
+    }
+
+    track_script {
+        chk_monitoring
     }
 }
