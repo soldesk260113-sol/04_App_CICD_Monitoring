@@ -131,6 +131,7 @@ PROXY_RESULT=$(timeout 15 docker exec $JENKINS_CONTAINER bash -c "
         mkdir -p ~/.ssh && chmod 700 ~/.ssh
         grep -qF '$JENKINS_PUB_KEY' ~/.ssh/authorized_keys 2>/dev/null || echo '$JENKINS_PUB_KEY' >> ~/.ssh/authorized_keys
         chmod 600 ~/.ssh/authorized_keys
+        restorecon -R -v ~/.ssh 2>/dev/null || true
     \" &>/dev/null; then
         if timeout 5 ssh \$SSH_OPTS -o PasswordAuthentication=no -o PubkeyAuthentication=yes ansible@$PROXY_HOST 'exit 0' &>/dev/null; then
             echo 'SUCCESS'

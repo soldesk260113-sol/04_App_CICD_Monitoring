@@ -3,7 +3,13 @@
   include_role:
     name: docker
 
-- name: 1.1. Jenkins 컨테이너 실행 여부 확인
+- name: 1.1. Docker Socket 권한 수정 (Jenkins가 Docker In Docker 사용 시 필요)
+  file:
+    path: /var/run/docker.sock
+    mode: '0666'
+    state: file
+
+- name: 1.2. Jenkins 컨테이너 실행 여부 확인
   shell: docker ps --filter "name=jenkins" --filter "status=running" --format "{{ '{{' }}.Names{{ '}}' }}"
   register: jenkins_running_check
   changed_when: false

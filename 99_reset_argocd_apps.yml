@@ -16,14 +16,14 @@
       shell: kubectl delete -f /root/argocd_apps.yaml --ignore-not-found=true
       register: delete_result
     
-    - name: Wait for deletion (optional, simplified)
-      pause:
-        seconds: 10
+    # - name: Wait for deletion (optional, simplified)
+    #   pause:
+    #     seconds: 10
 
-    - name: Apply ArgoCD Applications Fresh
-      shell: kubectl apply -f /root/argocd_apps.yaml
-      register: apply_result
+    # - name: Apply ArgoCD Applications Fresh
+    #   shell: kubectl apply -f /root/argocd_apps.yaml
+    #   register: apply_result
 
-    - name: Display Apply Result
-      debug:
-        msg: "{{ apply_result.stdout_lines }}"
+    # - name: Display Apply Result
+    #   debug:
+    #     msg: "{{ apply_result.stdout_lines }}"
