@@ -27,4 +27,8 @@ vrrp_instance VI_1 {
     track_script {
         chk_monitoring
     }
+
+    notify_master "/usr/bin/wall '⚠️  [CRITICAL] Keepalived: I became MASTER! (10.2.2.99 is HERE)'"
+    notify_backup "/usr/bin/wall 'ℹ️  [INFO] Keepalived: I entered BACKUP state.'"
+    notify_fault  "/usr/bin/wall '🔥 [FAULT] Keepalived: Service Failed! Releasing VIP...'"
 }

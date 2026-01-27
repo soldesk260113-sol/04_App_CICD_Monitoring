@@ -6,7 +6,7 @@
   become: yes
   tasks:
     # App of Apps 패턴 적용:
-    # - 모든 마이크로서비스(map-api, energy-api, kma-api, my-web)의 설정을 담은
+    # - 모든 마이크로서비스(map-api, energy-api, kma-api, frontcode)의 설정을 담은
     #   상위 메타 애플리케이션을 배포합니다.
     - name: Copy argocd_apps.yaml to Master Node
       copy:
