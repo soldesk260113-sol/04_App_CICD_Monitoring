@@ -11,10 +11,13 @@
     # ───────────────────────────────────────────────────────────────────────────
     # Redis 배포 (필수 의존성)
     # ───────────────────────────────────────────────────────────────────────────
-    - name: 2. Deploy Redis (Deployment + Service)
-      shell: kubectl apply -f {{ item }}
-      loop:
-        - "{{ playbook_dir }}/k8s_manifests/redis.yaml"
+    - name: 2. Copy Redis manifest to K8S node
+      copy:
+        src: "{{ playbook_dir }}/k8s_manifests/redis.yaml"
+        dest: /tmp/redis.yaml
+    
+    - name: 3. Deploy Redis (Deployment + Service)
+      shell: kubectl apply -f /tmp/redis.yaml
 
     # ───────────────────────────────────────────────────────────────────────────
     # Harbor ImagePullSecret 생성 (Jenkins가 빌드한 이미지를 K8s가 당겨오기 위해 필요)
