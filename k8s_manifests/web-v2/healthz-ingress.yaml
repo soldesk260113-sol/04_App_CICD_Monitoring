@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cafekec-healthz-ingress
+  namespace: team2
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: cafekec.shop
+    http:
+      paths:
+      - path: /healthz/global-status
+        pathType: Exact
+        backend:
+          service:
+            name: team2-gateway
+            port:
+              number: 80
+

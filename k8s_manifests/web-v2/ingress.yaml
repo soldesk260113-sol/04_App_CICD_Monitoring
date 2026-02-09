@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cafekec-unified-ingress
+  namespace: team2
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: cafekec.shop
+    http:
+      paths:
+      - path: /v2(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: web-v2-service
+            port:
+              number: 80
+      - path: /api/energy(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: energy-api
+            port:
+              number: 8000

@@ -1,0 +1,123 @@
+---
+# ───────────────────────────────────────────────────────────────────────────
+# Sub-task: Update Jenkins Job Git URL (Create if missing)
+# ───────────────────────────────────────────────────────────────────────────
+
+- name: "[{{ job_name }}] Get Jenkins CSRF Crumb & Session (curl)"
+  shell: |
+    # Save cookie to a unique temporary file (Sanitized filename)
+    curl -s -c '/tmp/cookie_{{ job_name | replace("(", "_") | replace(")", "_") }}.txt' -u admin:admin123 "http://10.2.2.40:8080/crumbIssuer/api/json"
+  register: crumb_response
+  delegate_to: CICD-OPS
+  become: true
+
+- name: "[{{ job_name }}] Check if Job Exists (curl)"
+  shell: |
+    # Use saved cookie to check existence
+    curl -s -o /dev/null -w "%{http_code}" -b '/tmp/cookie_{{ job_name | replace("(", "_") | replace(")", "_") }}.txt' -u admin:admin123 "http://10.2.2.40:8080/job/{{ job_name }}/config.xml"
+  register: job_check_curl
+  delegate_to: CICD-OPS
+  become: true
+  ignore_errors: yes
+
+- name: "[{{ job_name }}] Create Job if Missing (curl)"
+  shell: |
+    # Extract Crumb from previous response
+    CRUMB_FIELD=$(echo '{{ crumb_response.stdout }}' | grep -o '"crumbRequestField":"[^"]*"' | cut -d'"' -f4)
+    CRUMB_VALUE=$(echo '{{ crumb_response.stdout }}' | grep -o '"crumb":"[^"]*"' | cut -d'"' -f4)
+
+    # Write XML to sanitized filename
+    cat <<EOF > '/tmp/{{ job_name | replace("(", "_") | replace(")", "_") }}_create.xml'
+    <?xml version='1.1' encoding='UTF-8'?>
+    <flow-definition plugin="workflow-job">
+      <description>Created by Ansible Migration</description>
+      <keepDependencies>false</keepDependencies>
+      <properties/>
+      <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps">
+        <scm class="hudson.plugins.git.GitSCM" plugin="git">
+          <configVersion>2</configVersion>
+          <userRemoteConfigs>
+            <hudson.plugins.git.UserRemoteConfig>
+              <url>http://10.2.2.40:3001/admin/{{ gitea_repo_name }}.git</url>
+              <credentialsId>gitea-auth</credentialsId>
+            </hudson.plugins.git.UserRemoteConfig>
+          </userRemoteConfigs>
+          <branches>
+            <hudson.plugins.git.BranchSpec>
+              <name>*/main</name>
+            </hudson.plugins.git.BranchSpec>
+          </branches>
+          <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+          <submoduleCfg class="list"/>
+          <extensions/>
+        </scm>
+        <scriptPath>{{ script_path | default('Jenkinsfile') }}</scriptPath>
+        <lightweight>true</lightweight>
+      </definition>
+      <triggers/>
+      <disabled>false</disabled>
+    </flow-definition>
+    EOF
+
+    # Use Cookie AND Crumb Header
+    curl -s -X POST -u admin:admin123 "http://10.2.2.40:8080/createItem?name={{ job_name }}" \
+      -H "Content-Type: text/xml" \
+      -H "$CRUMB_FIELD: $CRUMB_VALUE" \
+      -b '/tmp/cookie_{{ job_name | replace("(", "_") | replace(")", "_") }}.txt' \
+      --data-binary @'/tmp/{{ job_name | replace("(", "_") | replace(")", "_") }}_create.xml'
+    
+    rm -f '/tmp/{{ job_name | replace("(", "_") | replace(")", "_") }}_create.xml'
+  delegate_to: CICD-OPS
+  become: true
+  register: create_response
+  failed_when: "'Exception' in create_response.stdout or 'Error' in create_response.stdout"
+  when: job_check_curl.stdout == "404"
+
+# Only update if job existed (to preserve other settings)
+- name: "[{{ job_name }}] Get Jenkins Job Config (Existing)"
+  shell: |
+    curl -s -b '/tmp/cookie_{{ job_name | replace("(", "_") | replace(")", "_") }}.txt' -u admin:admin123 "http://10.2.2.40:8080/job/{{ job_name }}/config.xml" > '/tmp/{{ job_name | replace("(", "_") | replace(")", "_") }}_config.xml'
+  delegate_to: CICD-OPS
+  become: true
+  when: job_check_curl.stdout == "200"
+
+- name: "[{{ job_name }}] Update Git URL in Config"
+  shell: |
+    sed -i 's|<url>.*</url>|<url>http://10.2.2.40:3001/admin/{{ gitea_repo_name }}.git</url>|g' '/tmp/{{ job_name | replace("(", "_") | replace(")", "_") }}_config.xml'
+  delegate_to: CICD-OPS
+  become: true
+  ignore_errors: yes
+  when: job_check_curl.stdout == "200"
+
+- name: "[{{ job_name }}] Update scriptPath in Config (if provided)"
+  shell: |
+    sed -i 's|<scriptPath>.*</scriptPath>|<scriptPath>{{ script_path }}</scriptPath>|g' '/tmp/{{ job_name | replace("(", "_") | replace(")", "_") }}_config.xml'
+  delegate_to: CICD-OPS
+  become: true
+  ignore_errors: yes
+  when: 
+    - job_check_curl.stdout == "200"
+    - script_path is defined
+
+- name: "[{{ job_name }}] Update Jenkins Job (REST API)"
+  shell: |
+    CRUMB_FIELD=$(echo '{{ crumb_response.stdout }}' | grep -o '"crumbRequestField":"[^"]*"' | cut -d'"' -f4)
+    CRUMB_VALUE=$(echo '{{ crumb_response.stdout }}' | grep -o '"crumb":"[^"]*"' | cut -d'"' -f4)
+
+    curl -s -X POST -u admin:admin123 "http://10.2.2.40:8080/job/{{ job_name }}/config.xml" \
+    -H "Content-Type: text/xml" \
+    -H "$CRUMB_FIELD: $CRUMB_VALUE" \
+    -b '/tmp/cookie_{{ job_name | replace("(", "_") | replace(")", "_") }}.txt' \
+    --data-binary @'/tmp/{{ job_name | replace("(", "_") | replace(")", "_") }}_config.xml'
+    
+    rm -f '/tmp/{{ job_name | replace("(", "_") | replace(")", "_") }}_config.xml'
+  delegate_to: CICD-OPS
+  become: true
+  ignore_errors: yes
+  when: job_check_curl.stdout == "200"
+
+- name: "[{{ job_name }}] Cleanup Cookie"
+  shell: rm -f '/tmp/cookie_{{ job_name | replace("(", "_") | replace(")", "_") }}.txt'
+  delegate_to: CICD-OPS
+  become: true
+  ignore_errors: yes

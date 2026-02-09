@@ -1,5 +1,5 @@
 ---
-# Docker 설치 (PC3 API 서버용)
+# Docker 설치 
 
 - name: 1. Docker 리포지토리 추가
   get_url:

@@ -66,9 +66,9 @@
   register: harbor_status
   changed_when: false
 
-- name: 9. Harbor 상태 출력
-  debug:
-    msg: "{{ harbor_status.stdout_lines }}"
+# - name: 9. Harbor 상태 출력
+#   debug:
+#     msg: "{{ harbor_status.stdout_lines }}"
 
 - name: 11. Firewall 포트 개방 (Harbor HTTP/HTTPS)
   ansible.posix.firewalld:
@@ -78,17 +78,16 @@
     immediate: yes
   loop:
     - "{{ harbor_http_port }}"
-    - "{{ harbor_https_port if harbor_https_enabled else omit }}"
   ignore_errors: yes
 
-- name: 12. Harbor 접속 정보 출력
-  debug:
-    msg:
-      - "Harbor 설치 완료!"
-      - "접속 URL: http://{{ harbor_hostname }}:{{ harbor_http_port }}"
-      - "관리자 계정: admin"
-      - "관리자 비밀번호: {{ harbor_admin_password }}"
-      - "Docker 로그인: docker login {{ harbor_hostname }}:{{ harbor_http_port }}"
+# - name: 12. Harbor 접속 정보 출력
+#   debug:
+#     msg:
+#       - "Harbor 설치 완료!"
+#       - "접속 URL: http://{{ harbor_hostname }}:{{ harbor_http_port }}"
+#       - "관리자 계정: admin"
+#       - "관리자 비밀번호: {{ harbor_admin_password }}"
+#       - "Docker 로그인: docker login {{ harbor_hostname }}:{{ harbor_http_port }}"
 
 # [추가됨] Production 네임스페이스가 없으면 에러가 나므로 먼저 확인/생성합니다.
 - name: 13. K8S Production 네임스페이스 확인 및 생성

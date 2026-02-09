@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-v2-dashboard
+  namespace: team2
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web-v2-dashboard
+  template:
+    metadata:
+      labels:
+        app: web-v2-dashboard
+    spec:
+      imagePullSecrets:
+      - name: harbor-secret
+      containers:
+      - name: web
+        image: 10.2.2.40:5000/library/web-v2-dashboard:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+
