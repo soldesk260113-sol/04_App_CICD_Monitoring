@@ -32,8 +32,8 @@ spec:
             name: energy-api
             port:
               number: 8000
-      - path: /healthz/global-status
-        pathType: Exact
+      - path: /healthz/global-status(/|$)(.*)
+        pathType: ImplementationSpecific
         backend:
           service:
             name: energy-api
