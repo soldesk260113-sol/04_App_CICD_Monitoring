@@ -32,7 +32,7 @@ spec:
             name: energy-api
             port:
               number: 8000
-      - path: /healthz/global-status(/|$)(.*)
+      - path: /health/global-status(/|$)(.*)
         pathType: ImplementationSpecific
         backend:
           service:
