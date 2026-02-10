@@ -5,10 +5,6 @@ metadata:
   namespace: production
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /$2
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      if ($request_uri = "/") {
-        return 301 /main;
-      }
 spec:
   ingressClassName: nginx
   rules:
