@@ -8,7 +8,6 @@ resources:
 - deployment.yaml
 - service.yaml
 - ingress.yaml
-- healthz-ingress.yaml
 
 # 이름 뒤에 해시값(랜덤 문자) 붙는 것 방지
 generatorOptions:
