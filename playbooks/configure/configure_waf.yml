@@ -1,0 +1,67 @@
+---
+- name: Configure WAF with new SSL Certificates
+  hosts: WAF
+  become: yes
+  vars:
+    cert_src_dir: "/home/ansible/Antigravity/Ansible/04_App_CICD_Monitoring/k8s_manifests/web-v2"
+    cert_dest_dir: "/etc/pki/tls/certs"
+    key_dest_dir: "/etc/pki/tls/private"
+    apache_conf_path: "/etc/httpd/conf.d/ssl-waf.conf"
+
+  tasks:
+    - name: Ensure certificate directory exists
+      file:
+        path: "{{ cert_dest_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Ensure key directory exists
+      file:
+        path: "{{ key_dest_dir }}"
+        state: directory
+        mode: '0700'
+
+    - name: Copy Certificate File
+      copy:
+        src: "{{ cert_src_dir }}/cafekec.crt"
+        dest: "{{ cert_dest_dir }}/cafekec.crt"
+        mode: '0644'
+        owner: root
+        group: root
+      notify: Restart Apache
+
+    - name: Copy Key File
+      copy:
+        src: "{{ cert_src_dir }}/cafekec.key"
+        dest: "{{ key_dest_dir }}/cafekec.key"
+        mode: '0600'
+        owner: root
+        group: root
+      notify: Restart Apache
+
+    - name: Update Apache Configuration (SSLCertificateFile)
+      lineinfile:
+        path: "{{ apache_conf_path }}"
+        regexp: '^(\s*)SSLCertificateFile\s+'
+        line: '    SSLCertificateFile {{ cert_dest_dir }}/cafekec.crt'
+      notify: Restart Apache
+
+    - name: Update Apache Configuration (SSLCertificateKeyFile)
+      lineinfile:
+        path: "{{ apache_conf_path }}"
+        regexp: '^(\s*)SSLCertificateKeyFile\s+'
+        line: '    SSLCertificateKeyFile {{ key_dest_dir }}/cafekec.key'
+      notify: Restart Apache
+
+    - name: Update Apache Configuration (Host Header)
+      lineinfile:
+        path: "{{ apache_conf_path }}"
+        regexp: '^(\s*)RequestHeader set Host\s+'
+        line: '    RequestHeader set Host "cafekec.shop"'
+      notify: Restart Apache
+
+  handlers:
+    - name: Restart Apache
+      service:
+        name: httpd
+        state: restarted

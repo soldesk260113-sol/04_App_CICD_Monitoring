@@ -35,7 +35,7 @@
   ignore_errors: yes
 
 - name: "[{{ repo.gitea_repo }}] 4. Update Jenkins Jobs"
-  include_tasks: _task_update_jenkins_job_url.yml
+  include_tasks: update_jenkins_job_url.yml
   loop: "{{ repo.jenkins_jobs }}"
   loop_control:
     loop_var: job_name

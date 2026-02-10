@@ -143,7 +143,7 @@
     # 2. Process each unique repository
     # ───────────────────────────────────────────────────────────────────────────
     - name: 2. Process Each Repository
-      include_tasks: _task_migrate_github_repo.yml
+      include_tasks: ../tasks/migrate_github_repo.yml
       loop: "{{ repo_mappings }}"
       loop_control:
         loop_var: repo

@@ -4,22 +4,24 @@
 # ═══════════════════════════════════════════════════════════════════════════
 
 # 1. Base CICD (Jenkins/Gitea)
-- import_playbook: 05_deploy_cicd.yml
+- import_playbook: playbooks/deploy/cicd.yml
 
 # 2. Configure Jenkins SSH (Depends on Jenkins being up)
-- import_playbook: 05_configure_jenkins_ssh.yml
+- import_playbook: playbooks/configure/jenkins_ssh.yml
 
 # 3. Docker Registry (Harbor)
-- import_playbook: 06_deploy_registry.yml
+- import_playbook: playbooks/deploy/registry.yml
 
 # 4. Monitoring (Prometheus/Grafana)
-- import_playbook: 03_deploy_monitoring.yml
+- import_playbook: playbooks/deploy/monitoring.yml
 
 # 5. ArgoCD (GitOps)
-- import_playbook: 07_deploy_argocd.yml
+- import_playbook: playbooks/deploy/argocd.yml
 
 # 5.5. App Dependencies (Secrets & Redis for Team2 Apps)
-- import_playbook: 08_deploy_app_dependencies.yml
+- import_playbook: playbooks/deploy/app_dependencies.yml
 
 # 6. ArgoCD Apps (Initial App Deployment)
-- import_playbook: 07_deploy_argocd_apps.yml
+- import_playbook: playbooks/deploy/argocd_apps.yml
+# 7. Configure WAF (SSL & Proxy)
+- import_playbook: playbooks/configure/configure_waf.yml

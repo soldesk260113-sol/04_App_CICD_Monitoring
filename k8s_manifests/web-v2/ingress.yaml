@@ -7,6 +7,10 @@ metadata:
     nginx.ingress.kubernetes.io/rewrite-target: /$2
 spec:
   ingressClassName: nginx
+  tls:
+  - hosts:
+    - cafekec.shop
+    secretName: cafekec-tls
   rules:
   - host: cafekec.shop
     http:
