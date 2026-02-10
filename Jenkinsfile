@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        choice(name: 'PLAYBOOK', choices: ['site.yml', '03_deploy_monitoring.yml', '05_deploy_cicd.yml', '05_configure_jenkins_ssh.yml', '06_deploy_registry.yml', '07_deploy_argocd.yml', '07_deploy_argocd_apps.yml', '07_reset_argocd_apps.yml'], description: 'Select the App/CICD playbook to run')
+        choice(name: 'PLAYBOOK', choices: ['site.yml', 'playbooks/deploy/cicd.yml', 'playbooks/configure/jenkins_ssh.yml', 'playbooks/deploy/registry.yml', 'playbooks/deploy/monitoring.yml', 'playbooks/deploy/argocd.yml', 'playbooks/deploy/app_dependencies.yml', 'playbooks/deploy/argocd_apps.yml', 'playbooks/configure/configure_waf.yml', 'playbooks/configure/harbor_replication.yml', 'playbooks/migration/github_to_gitea.yml'], description: 'Select the App/CICD playbook to run')
         string(name: 'LIMIT', defaultValue: 'all', description: 'Target hosts limit (e.g. PC5). Default: all')
         booleanParam(name: 'DRY_RUN', defaultValue: false, description: 'Run in check mode (dry-run)?')
     }
