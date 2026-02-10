@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: cafekec-unified-ingress
+  name: production-main-ingress
   namespace: production
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /$2
@@ -22,14 +22,14 @@ spec:
             name: web-v2-service
             port:
               number: 80
-      - path: /api/weather(/|$)(.*)
+      - path: /api/main/weather(/|$)(.*)
         pathType: Prefix
         backend:
           service:
             name: kma-api
             port:
               number: 8080
-      - path: /api/energy(/|$)(.*)
+      - path: /api/main/energy(/|$)(.*)
         pathType: Prefix
         backend:
           service:
