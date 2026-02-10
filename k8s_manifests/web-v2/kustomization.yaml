@@ -10,14 +10,6 @@ resources:
 - ingress.yaml
 - healthz-ingress.yaml
 
-# 파일을 읽어서 시크릿 생성
-secretGenerator:
-- name: cafekec-tls
-  files:
-  - tls.crt=cafekec.crt
-  - tls.key=cafekec.key
-  type: kubernetes.io/tls
-
 # 이름 뒤에 해시값(랜덤 문자) 붙는 것 방지
 generatorOptions:
   disableNameSuffixHash: true

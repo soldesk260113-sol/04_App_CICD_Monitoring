@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: web-v2-dashboard
-  namespace: team2
+  namespace: production
 spec:
   replicas: 2
   selector:

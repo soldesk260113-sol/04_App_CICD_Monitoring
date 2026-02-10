@@ -171,7 +171,6 @@ ZONES["core.internal"]="secure.core.internal:10.2.1.1 waf.core.internal:10.2.1.2
 ZONES["k8s.internal"]="k8s-api.k8s.internal:10.2.2.100 cp1.k8s.internal:10.2.2.2 cp2.k8s.internal:10.2.2.3 cp3.k8s.internal:10.2.2.4 wk1.k8s.internal:10.2.2.5 wk2.k8s.internal:10.2.2.6 wk3.k8s.internal:10.2.2.7 wk4.k8s.internal:10.2.2.8 wk5.k8s.internal:10.2.2.9 wk6.k8s.internal:10.2.2.10"
 
 # Zone: db.internal
-ZONES["db.internal"]="db-vip.db.internal:10.2.2.254 db-proxy1.db.internal:10.2.2.20 db-proxy2.db.internal:10.2.2.21 storage.db.internal:10.2.2.30 db-internal.db.internal:10.2.3.254 db-a.db.internal:10.2.3.2 db-s.db.internal:10.2.3.3 db-b.db.internal:10.2.3.4 etcd-1.db.internal:10.2.3.20 etcd-2.db.internal:10.2.3.21 etcd-3.db.internal:10.2.3.22"
 
 # Zone: svc.internal
 ZONES["svc.internal"]="ingress.svc.internal:10.2.1.2"

@@ -2,7 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: cafekec-healthz-ingress
-  namespace: team2
+  namespace: production
 spec:
   ingressClassName: nginx
   rules:
@@ -13,7 +13,7 @@ spec:
         pathType: Exact
         backend:
           service:
-            name: team2-gateway
+            name: energy-api
             port:
-              number: 80
+              number: 8000
 

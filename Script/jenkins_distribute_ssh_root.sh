@@ -41,7 +41,6 @@ SERVERS=(
     "10.2.2.21"     # DB-Proxy2
     "10.2.3.2"      # DB-Active (via Proxy)
     "10.2.3.3"      # DB-Standby (via Proxy)
-    "10.2.3.4"      # DB-Backup (via Proxy)
     "10.2.3.20"     # etcd_1 (via Proxy)
     "10.2.3.21"     # etcd_2 (via Proxy)
     "10.2.3.22"     # etcd_3 (via Proxy)
