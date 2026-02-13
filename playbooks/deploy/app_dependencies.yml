@@ -1,0 +1,34 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Playbook 08: Deploy App Dependencies - Secrets(API-Token) & Redis
+# ═══════════════════════════════════════════════════════════════════════════
+- name: Deploy App Dependencies (Secrets & Redis)
+  hosts: K8S_Primary_Master
+  become: yes
+  tasks:
+    - name: 1. Ensure 'production' namespace exists
+      shell: kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
+
+    # ───────────────────────────────────────────────────────────────────────────
+    # Redis 배포 (필수 의존성)
+    # ───────────────────────────────────────────────────────────────────────────
+    - name: 2. Copy Redis manifest to K8S node
+      copy:
+        src: "{{ playbook_dir }}/k8s_manifests/redis.yaml"
+        dest: /tmp/redis.yaml
+    
+    - name: 3. Deploy Redis (Deployment + Service)
+      shell: kubectl apply -f /tmp/redis.yaml
+
+    # ───────────────────────────────────────────────────────────────────────────
+    # Harbor ImagePullSecret 생성 (Jenkins가 빌드한 이미지를 K8s가 당겨오기 위해 필요)
+    # [FIX] 비밀번호를 Admin123 으로 고정하여 생성
+    # ───────────────────────────────────────────────────────────────────────────
+    - name: 3. Create 'harbor-secret' for Docker Registry
+      shell: >
+        kubectl create secret docker-registry harbor-secret
+        --docker-server=10.2.2.40:5000
+        --docker-username=admin
+        --docker-password=Admin123
+        --docker-email=admin@antigravity.com
+        -n production
+        --dry-run=client -o yaml | kubectl apply -f -

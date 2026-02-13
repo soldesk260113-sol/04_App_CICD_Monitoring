@@ -1,0 +1,199 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Playbook 11: Configure Harbor Replication (Docker Hub -> Harbor)
+# ═══════════════════════════════════════════════════════════════════════════
+- name: Configure Harbor Replication
+  hosts: CICD-OPS
+  become: yes
+  vars:
+    harbor_url: "http://10.2.2.40:5000"
+    harbor_user: "admin"
+    harbor_pass: "Admin123"
+    registry_name: "DockerHub-Main"
+    pull_policy_name: "1-Pull-From-Hub-Initial"
+    push_policy_name: "2-Push-To-Hub-Sync"
+    # ⚠️ Push 복제를 위해서는 Docker Hub 인증 정보가 필요.
+    # Docker Hub 비밀번호 또는 [Access Token]을 입력하세요.
+    # 실행 시: ansible-playbook site.yml -e "docker_hub_token=dckr_pat_..."
+    docker_hub_token: "{{ lookup('env', 'DOCKER_HUB_TOKEN') | default(lookup('env', 'DOCKER_HUB_PASSWORD'), true) | default('', true) }}"
+
+  tasks:
+    # ───────────────────────────────────────────────────────────────────────────
+    # 0. Harbor 완전 시작 대기
+    # ───────────────────────────────────────────────────────────────────────────
+    - name: 0. Harbor 완전 시작 대기 (30초)
+      wait_for:
+        host: 10.2.2.40
+        port: 5000
+        delay: 10
+        timeout: 30
+        state: started
+      ignore_errors: yes
+
+    - name: 0.1. Harbor API 응답 대기
+      uri:
+        url: "{{ harbor_url }}/api/v2.0/systeminfo"
+        method: GET
+        user: "{{ harbor_user }}"
+        password: "{{ harbor_pass }}"
+        force_basic_auth: yes
+        status_code: 200
+      register: harbor_health
+      until: harbor_health.status == 200
+      retries: 12
+      delay: 5
+      ignore_errors: yes
+
+    # ───────────────────────────────────────────────────────────────────────────
+    # 1. Registry Endpoint 생성 (Docker Hub) - 인증 정보 포함
+    # ───────────────────────────────────────────────────────────────────────────
+    - name: 1. Check if Registry '{{ registry_name }}' exists
+      uri:
+        url: "{{ harbor_url }}/api/v2.0/registries?name={{ registry_name }}"
+        method: GET
+        user: "{{ harbor_user }}"
+        password: "{{ harbor_pass }}"
+        force_basic_auth: yes
+        return_content: yes
+      register: registry_check
+
+    - name: 1.1. Create Registry Endpoint
+      uri:
+        url: "{{ harbor_url }}/api/v2.0/registries"
+        method: POST
+        user: "{{ harbor_user }}"
+        password: "{{ harbor_pass }}"
+        force_basic_auth: yes
+        body_format: json
+        body:
+          name: "{{ registry_name }}"
+          type: "docker-hub"
+          url: "https://hub.docker.com"
+          description: "Official Docker Hub (Synced)"
+          credential: "{{ {'type':'basic', 'access_key':docker_hub_namespace, 'access_secret':docker_hub_token} if docker_hub_token else omit }}"
+        status_code: 201
+      when: registry_check.json | length == 0
+
+    # ───────────────────────────────────────────────────────────────────────────
+    # 2. [초기 1회] Pull Replication (Hub -> Harbor) - 수동 트리거
+    # ───────────────────────────────────────────────────────────────────────────
+    - name: 2. Get Registry ID
+      uri:
+        url: "{{ harbor_url }}/api/v2.0/registries?name={{ registry_name }}"
+        method: GET
+        user: "{{ harbor_user }}"
+        password: "{{ harbor_pass }}"
+        force_basic_auth: yes
+      register: registry_info
+
+    - name: 2.1. Check 'Pull' Policy
+      uri:
+        url: "{{ harbor_url }}/api/v2.0/replication/policies?name={{ pull_policy_name }}"
+        method: GET
+        user: "{{ harbor_user }}"
+        password: "{{ harbor_pass }}"
+        force_basic_auth: yes
+        return_content: yes
+      register: pull_policy_check
+
+    - name: 2.2. Create 'Pull' Policy (Initial Sync)
+      uri:
+        url: "{{ harbor_url }}/api/v2.0/replication/policies"
+        method: POST
+        user: "{{ harbor_user }}"
+        password: "{{ harbor_pass }}"
+        force_basic_auth: yes
+        body_format: json
+        body: |
+          {
+            "name": "{{ pull_policy_name }}",
+            "src_registry": {
+              "id": {{ registry_info.json[0].id | int }}
+            },
+            "dest_namespace": "library",
+            "dest_registry": null,
+            "filters": [
+              {
+                "type": "name",
+                "value": "{{ docker_hub_namespace }}/**"
+              },
+            ],
+            "trigger": {
+              "type": "manual"
+            },
+            "enabled": true,
+            "override": true
+          }
+        status_code: 201
+      register: pull_policy_create
+      when: pull_policy_check.json | length == 0
+
+    - name: 2.2.1. Set Policy ID
+      set_fact:
+        pull_policy_id: "{{ pull_policy_check.json[0].id if (pull_policy_check.json | length > 0) else (pull_policy_create.json.id | default('')) }}"
+
+    - name: 2.3. Trigger Initial Pull (Run Once)
+      uri:
+        url: "{{ harbor_url }}/api/v2.0/replication/executions"
+        method: POST
+        user: "{{ harbor_user }}"
+        password: "{{ harbor_pass }}"
+        force_basic_auth: yes
+        body_format: json
+        body: |
+          {
+            "policy_id": {{ pull_policy_id | int }}
+          }
+        status_code: 201
+      register: execution_trigger
+      failed_when: false
+      when: pull_policy_id is defined and pull_policy_id != ''
+
+    # ───────────────────────────────────────────────────────────────────────────
+    # 3. [지속적] Push Replication (Harbor -> Hub) - 이벤트 트리거
+    # ───────────────────────────────────────────────────────────────────────────
+    - name: 3. Check 'Push' Policy
+      uri:
+        url: "{{ harbor_url }}/api/v2.0/replication/policies?name={{ push_policy_name }}"
+        method: GET
+        user: "{{ harbor_user }}"
+        password: "{{ harbor_pass }}"
+        force_basic_auth: yes
+        return_content: yes
+      register: push_policy_check
+
+    - name: 3.1. Create 'Push' Policy (Sync Back to Hub)
+      uri:
+        url: "{{ harbor_url }}/api/v2.0/replication/policies"
+        method: POST
+        user: "{{ harbor_user }}"
+        password: "{{ harbor_pass }}"
+        force_basic_auth: yes
+        body_format: json
+        body: |
+          {
+            "name": "{{ push_policy_name }}",
+            "src_registry": null,
+            "dest_registry": {
+              "id": {{ registry_info.json[0].id | int }}
+            },
+            "dest_namespace": "{{ docker_hub_namespace }}",
+            "filters": [
+              {
+                "type": "name",
+                "value": "library/**"
+              },
+              {
+                "type": "tag",
+                "value": "latest"
+              }
+            ],
+            "trigger": {
+              "type": "event_based"
+            },
+            "enabled": true,
+            "override": true
+          }
+        status_code: 201
+      when: 
+        - push_policy_check.json | length == 0
+        - docker_hub_token | length > 0  # 토큰이 있을 때만 생성

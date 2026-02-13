@@ -1,0 +1,28 @@
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# Site Playbook: 04_App_CICD_Monitoring Orchestrator
+# ═══════════════════════════════════════════════════════════════════════════
+
+# 1. Base CICD (Jenkins/Gitea)
+- import_playbook: playbooks/deploy/cicd.yml
+
+# 2. Configure Jenkins SSH (Depends on Jenkins being up)
+- import_playbook: playbooks/configure/jenkins_ssh.yml
+
+# 3. Docker Registry (Harbor)
+- import_playbook: playbooks/deploy/registry.yml
+
+# 4. Monitoring (Prometheus/Grafana)
+- import_playbook: playbooks/deploy/monitoring.yml
+
+# 5. ArgoCD (GitOps)
+- import_playbook: playbooks/deploy/argocd.yml
+
+# 5.5. App Dependencies (Secrets & Redis for Team2 Apps)
+- import_playbook: playbooks/deploy/app_dependencies.yml
+
+# 6. ArgoCD Apps (Initial App Deployment)
+- import_playbook: playbooks/deploy/argocd_apps.yml
+# 7. Configure WAF (SSL & Proxy)
+# [2026-02-10] WAF가 Apache -> Nginx로 변경되어 해당 설정은 주석 처리함. (추후 Nginx용 설정 개발 필요)
+# - import_playbook: playbooks/configure/configure_waf.yml

@@ -1,0 +1,77 @@
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# Playbook 07: Deploy ArgoCD - GitOps CD 도구 설치
+# ═══════════════════════════════════════════════════════════════════════════
+- name: ArgoCD 배포
+  hosts: K8S_Primary_Master
+  become: yes
+  tasks:
+    - name: ArgoCD 네임스페이스 생성
+      shell: kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+      
+    - name: ArgoCD 설치 (Manifest)
+      shell: kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+      
+    - name: "ArgoCD 서버 NodePort 노출 (Patch: 32177)"
+      shell: |
+        kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "NodePort", "ports": [{"port": 80, "targetPort": 8080, "name": "http"}, {"port": 443, "targetPort": 8080, "name": "https", "nodePort": 32177}]}}'
+        
+    - name: ArgoCD 초기 비밀번호 확인 방법 안내 (Log)
+      debug:
+        msg: 
+          - "ArgoCD가 설치되었습니다."
+          - "접속 주소: https://10.2.2.7:32177"
+          - "외부 접속: https://172.16.6.61:32177"
+          - "NodePort 확인: kubectl get svc -n argocd argocd-server"
+          - "초기 비밀번호: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
+
+    - name: ArgoCD Ingress 배포
+      template:
+        src: roles/monitoring/templates/argocd-ingress.yaml.j2
+        dest: /tmp/argocd-ingress.yaml
+        mode: '0644'
+
+    - name: Apply ArgoCD Ingress
+      shell: kubectl apply -f /tmp/argocd-ingress.yaml
+
+# 이 부분 일단 테스트로 열어둔 거임 나중에 없애야 함.
+- name: 외부 접속 허용 (SECURE Gateway 설정)
+  hosts: SECURE
+  become: yes
+  tasks:
+    # 1. NodePort 범위(30000-32767) 포트 개방
+    - name: NodePort 전체 범위 개방 (30000-32767)
+      ansible.posix.firewalld:
+        zone: public
+        port: 30000-32767/tcp
+        permanent: yes
+        state: enabled
+        immediate: yes
+
+    # 2. NodePort 범위 포트포워딩 (Gateway -> K8S Master)
+    # 참고: firewalld 모듈에서 포트 범위 포워딩을 단순하게 처리하기 어렵거나 
+    # toaddr/toport 조합이 복잡할 수 있어 rich_rule을 사용합니다.
+    - name: NodePort 전체 범위 포트포워딩 설정 (to 10.2.2.7 - WN3)
+      ansible.posix.firewalld:
+        zone: public
+        rich_rule: 'rule family="ipv4" forward-port port="30000-32767" protocol="tcp" to-addr="10.2.2.7"'
+        permanent: yes
+        state: enabled
+        immediate: yes
+
+- name: ArgoCD 노드 격리 (W3 - Management Node)
+  hosts: K8S_Primary_Master
+  become: yes
+  tasks:
+    - name: Patch ArgoCD Components with Node Affinity (role=argocd)
+      shell: |
+        kubectl patch {{ item.kind }} {{ item.name }} -n argocd --type='merge' -p '{"spec": {"template": {"spec": {"affinity": {"nodeAffinity": {"requiredDuringSchedulingIgnoredDuringExecution": {"nodeSelectorTerms": [{"matchExpressions": [{"key": "role", "operator": "In", "values": ["argocd"]}]}]}}}}}}}'
+      loop:
+        - { kind: "deployment", name: "argocd-server" }
+        - { kind: "deployment", name: "argocd-repo-server" }
+        - { kind: "deployment", name: "argocd-dex-server" }
+        - { kind: "deployment", name: "argocd-redis" }
+        - { kind: "deployment", name: "argocd-notifications-controller" }
+        - { kind: "deployment", name: "argocd-applicationset-controller" }
+        - { kind: "statefulset", name: "argocd-application-controller" }
+

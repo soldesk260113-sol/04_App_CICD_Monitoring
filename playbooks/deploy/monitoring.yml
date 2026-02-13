@@ -1,0 +1,264 @@
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# Playbook 03: Deploy Monitoring - 모니터링 시스템 배포
+# - firewalld가 "active"일 때만 방화벽 관련 태스크 실행
+# - firewalld가 꺼져있거나(masked/inactive) 없으면 방화벽 태스크는 SKIP
+# ═══════════════════════════════════════════════════════════════════════════
+
+# 1단계: 모니터링 서버에 Prometheus + Grafana 스택 배포
+- name: 모니터링 서버 설정 (Prometheus + Grafana)
+  hosts: Monitoring_Servers
+  become: yes
+  roles:
+    - monitoring
+    - keepalived
+  tags:
+    - monitoring
+    - prometheus
+    - grafana
+
+  tasks:
+    # ---------------------------
+    # firewalld 상태 감지 (공통)
+    # ---------------------------
+    - name: Detect firewalld status
+      ansible.builtin.command: systemctl is-active firewalld
+      register: firewalld_active
+      changed_when: false
+      failed_when: false
+
+    - name: Set firewalld_running fact
+      ansible.builtin.set_fact:
+        firewalld_running: "{{ firewalld_active.stdout == 'active' }}"
+
+    # [설정] Local Mail Delivery (Postfix) - Alertmanager 알림용
+    - name: Postfix 패키지 설치
+      ansible.builtin.dnf:
+        name: [postfix, s-nail]
+        state: present
+
+    - name: Postfix 설정 (모든 인터페이스 리슨)
+      ansible.builtin.lineinfile:
+        path: /etc/postfix/main.cf
+        regexp: '^inet_interfaces ='
+        line: 'inet_interfaces = all'
+
+    - name: Postfix 서비스 시작 및 활성화
+      ansible.builtin.service:
+        name: postfix
+        state: started
+        enabled: yes
+
+    - name: firewalld SMTP 포트 열기 (25/tcp)
+      ansible.posix.firewalld:
+        port: 25/tcp
+        permanent: yes
+        immediate: yes
+        state: enabled
+      when: firewalld_running
+
+# 2단계: 모든 서버에 Node Exporter 설치
+- name: Node Exporter 설치 (모든 서버)
+  hosts: All_Nodes
+  become: yes
+  vars:
+    node_exporter_version: "1.7.0"
+
+  tasks:
+    # ---------------------------
+    # firewalld 상태 감지 (공통)
+    # ---------------------------
+    - name: Detect firewalld status
+      ansible.builtin.command: systemctl is-active firewalld
+      register: firewalld_active
+      changed_when: false
+      failed_when: false
+
+    - name: Set firewalld_running fact
+      ansible.builtin.set_fact:
+        firewalld_running: "{{ firewalld_active.stdout == 'active' }}"
+
+    - name: Download Node Exporter binary
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+        dest: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Unarchive Node Exporter
+      ansible.builtin.unarchive:
+        src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+        dest: /tmp/
+      delegate_to: localhost
+      run_once: true
+
+    - name: Copy Node Exporter binary to Remote
+      ansible.builtin.copy:
+        src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+        dest: /usr/local/bin/node_exporter
+        mode: '0755'
+
+    - name: Create Node Exporter systemd service
+      ansible.builtin.copy:
+        content: |
+          [Unit]
+          Description=Node Exporter
+          After=network.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/bin/node_exporter
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/node_exporter.service
+      notify: Restart Node Exporter
+
+    - name: Enable and Start Node Exporter
+      ansible.builtin.service:
+        name: node_exporter
+        state: started
+        enabled: yes
+
+    - name: Open Node Exporter Port (9100)
+      ansible.posix.firewalld:
+        port: 9100/tcp
+        permanent: yes
+        immediate: yes
+        state: enabled
+      when: firewalld_running
+
+  handlers:
+    - name: Restart Node Exporter
+      ansible.builtin.service:
+        name: node_exporter
+        state: restarted
+        daemon_reload: yes
+
+# 2.5단계: etcd 메트릭(클라이언트) 포트 열기
+- name: etcd 메트릭 포트 열기 (2379/tcp)
+  hosts: ETCD_Cluster
+  become: yes
+
+  tasks:
+    # ---------------------------
+    # firewalld 상태 감지 (공통)
+    # ---------------------------
+    - name: Detect firewalld status
+      ansible.builtin.command: systemctl is-active firewalld
+      register: firewalld_active
+      changed_when: false
+      failed_when: false
+
+    - name: Set firewalld_running fact
+      ansible.builtin.set_fact:
+        firewalld_running: "{{ firewalld_active.stdout == 'active' }}"
+
+    - name: firewalld etcd 클라이언트 포트 열기 (2379/tcp)
+      ansible.posix.firewalld:
+        port: 2379/tcp
+        permanent: yes
+        immediate: yes
+        state: enabled
+      when: firewalld_running
+
+# 3단계: 모니터링 서버 방화벽 및 라우팅 설정
+- name: 모니터링 서버 방화벽 및 라우팅 설정 (Native Modules)
+  hosts: Monitoring
+  become: yes
+
+  tasks:
+    # ---------------------------
+    # firewalld 상태 감지 (공통)
+    # ---------------------------
+    - name: Detect firewalld status
+      ansible.builtin.command: systemctl is-active firewalld
+      register: firewalld_active
+      changed_when: false
+      failed_when: false
+
+    - name: Set firewalld_running fact
+      ansible.builtin.set_fact:
+        firewalld_running: "{{ firewalld_active.stdout == 'active' }}"
+
+    - name: Prometheus/Grafana/Alertmanager 포트 열기
+      ansible.posix.firewalld:
+        port: "{{ item }}/tcp"
+        permanent: yes
+        immediate: yes
+        state: enabled
+      loop: [9090, 3000, 9093, 9100]
+      when: firewalld_running
+
+    - name: DB 네트워크(10.2.3.0/24) 라우팅 추가 (via DB-Proxy VIP) - nmcli
+      community.general.nmcli:
+        conn_name: "ens160"
+        type: ethernet
+        routes4: "10.2.3.0/24 10.2.2.20"
+        state: present
+
+# [PC1/DNS] 비대칭 라우팅(Asymmetric Routing) 문제 해결
+- name: DNS 서버 라우팅 설정 (비대칭 라우팅 해결)
+  hosts: DNS
+  become: yes
+
+  tasks:
+    - name: 내부 네트워크(10.2.2.0/24) 전체 WAF 경유 설정 (nmcli)
+      community.general.nmcli:
+        conn_name: "ens160"
+        type: ethernet
+        routes4: "10.2.2.0/24 10.2.1.2, 10.2.2.40/32 0.0.0.0" # Controller 직접 통신 포함
+        state: present
+
+# [4단계] 외부 접속 설정 (SECURE -> Monitoring 포트 포워딩)
+- name: 외부 접속 설정 (SECURE Port Forwarding)
+  hosts: SECURE
+  become: yes
+  tags: monitoring
+
+  tasks:
+    # ---------------------------
+    # firewalld 상태 감지 (공통)
+    # ---------------------------
+    - name: Detect firewalld status
+      ansible.builtin.command: systemctl is-active firewalld
+      register: firewalld_active
+      changed_when: false
+      failed_when: false
+
+    - name: Set firewalld_running fact
+      ansible.builtin.set_fact:
+        firewalld_running: "{{ firewalld_active.stdout == 'active' }}"
+
+    # 1. 라우팅 추가 (via WAF)
+    - name: 내부 네트워크(10.2.2.0/24)로 가는 정적 라우팅 추가 (via WAF)
+      community.general.nmcli:
+        conn_name: "ens192" # Internal Interface
+        type: ethernet
+        routes4: "10.2.2.0/24 10.2.1.2"
+        state: present
+
+    # 2. NAT/Masquerade
+    - name: 방화벽 Masquerade 활성화
+      ansible.posix.firewalld:
+        masquerade: yes
+        state: enabled
+        permanent: yes
+        immediate: yes
+        zone: public
+      when: firewalld_running
+
+    # 3. 포트 포워딩 규칙 (Monitoring VIP: 10.2.2.99 사용)
+    - name: Add Monitoring Port Forwarding Rules
+      ansible.posix.firewalld:
+        rich_rule: 'rule family="ipv4" forward-port port="{{ item.port }}" protocol="tcp" to-port="{{ item.port }}" to-addr="10.2.2.99"'
+        permanent: yes
+        immediate: yes
+        state: enabled
+        zone: public
+      loop:
+        - { port: 3000 } # Grafana
+        - { port: 9090 } # Prometheus
+        - { port: 9093 } # Alertmanager
+      when: firewalld_running

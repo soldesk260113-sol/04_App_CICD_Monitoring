@@ -1,0 +1,157 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Playbook 13: Migrate GitHub Repositories to Gitea
+# ═══════════════════════════════════════════════════════════════════════════
+
+- name: "[CICD-OPS] Generate Gitea Token for Jenkins"
+  hosts: CICD-OPS
+  become: yes
+  tasks:
+    - name: Re-create Gitea Admin Token (API)
+      shell: |
+        # 1. Get List to find existing ID
+        LIST=$(curl -s -u admin:admin123 "http://localhost:3001/api/v1/users/admin/tokens")
+        
+        # 2. Extract ID using jq
+        TOKEN_ID=$(echo "$LIST" | jq -r '.[] | select(.name=="jenkins-manual-check") | .id')
+        
+        # 3. Delete if exists
+        if [ -n "$TOKEN_ID" ]; then
+           curl -s -X DELETE -u admin:admin123 "http://localhost:3001/api/v1/users/admin/tokens/$TOKEN_ID"
+        fi
+        
+        # 4. Create New Token
+        RESULT=$(curl -s -X POST -u admin:admin123 -H "Content-Type: application/json" \
+          -d '{"name":"jenkins-manual-check", "scopes": ["all"]}' "http://localhost:3001/api/v1/users/admin/tokens")
+        
+        # 5. Extract SHA1 using jq
+        TOKEN=$(echo "$RESULT" | jq -r '.sha1')
+        
+        if [ "$TOKEN" == "null" ] || [ -z "$TOKEN" ]; then
+            echo "ERROR: Failed to generate token"
+            echo "Response: $RESULT"
+            exit 1
+        fi
+        
+        echo "$TOKEN"
+      register: gitea_token_gen
+      changed_when: true
+
+    - name: Get Jenkins CSRF Crumb
+      shell: |
+        curl -s -c /tmp/cookie_auth.txt -u admin:admin123 "http://localhost:8080/crumbIssuer/api/json"
+      register: crumb_response
+      changed_when: false
+
+    - name: Register 'gitea-auth' Credential in Jenkins
+      shell: |
+        CRUMB_FIELD=$(echo '{{ crumb_response.stdout }}' | grep -o '"crumbRequestField":"[^"]*"' | cut -d'"' -f4)
+        CRUMB_VALUE=$(echo '{{ crumb_response.stdout }}' | grep -o '"crumb":"[^"]*"' | cut -d'"' -f4)
+        # Token is exactly stdout from previous step
+        TOKEN="{{ gitea_token_gen.stdout | trim }}"
+
+        cat <<EOF > /tmp/cred.xml
+        <com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl>
+          <scope>GLOBAL</scope>
+          <id>gitea-auth</id>
+          <description>Auto-generated Gitea Token</description>
+          <username>admin</username>
+          <password>$TOKEN</password>
+        </com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl>
+        EOF
+
+        # Attempt delete first (to overwrite)
+        curl -s -X POST -u admin:admin123 "http://localhost:8080/credentials/store/system/domain/_/credential/gitea-auth/doDelete" \
+          -H "$CRUMB_FIELD: $CRUMB_VALUE" -b /tmp/cookie_auth.txt > /dev/null 2>&1 || true
+
+        # Create
+        HTTP_CODE=$(curl -s -o /dev/stdout -w "%{http_code}" -X POST -u admin:admin123 "http://localhost:8080/credentials/store/system/domain/_/createCredentials" \
+          -H "Content-Type: application/xml" \
+          -H "$CRUMB_FIELD: $CRUMB_VALUE" \
+          -b /tmp/cookie_auth.txt \
+          --data-binary @/tmp/cred.xml)
+        
+        rm -f /tmp/cred.xml /tmp/cookie_auth.txt
+        
+        # Check HTTP Code (expect 200 or 302)
+        if [[ "$HTTP_CODE" =~ 200|302 ]]; then
+            echo "Success: Credential created/updated."
+        else
+            echo "Error: Failed to create credential. HTTP Code: $HTTP_CODE"
+            exit 1
+        fi
+      register: cred_create
+      changed_when: true
+
+
+
+- name: Clone GitHub Repos and Push to Gitea
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    gitea_url: "http://10.2.2.40:3001"
+    gitea_user: "admin"
+    gitea_pass: "admin123"
+    temp_dir: "/tmp/github_migration"
+    
+    # Repository mappings: GitHub -> Gitea
+    repo_mappings:
+      - github_org: "soldesk260113-sol"
+        github_repo: "00_Infra_Bootstrap"
+        gitea_repo: "00_Infra_Bootstrap"
+        jenkins_jobs: ["00_Infra_Bootstrap"]
+      
+      - github_org: "soldesk260113-sol"
+        github_repo: "01_Security_Layer"
+        gitea_repo: "01_Security_Layer"
+        jenkins_jobs: ["01_Security_Layer"]
+      
+      - github_org: "soldesk260113-sol"
+        github_repo: "02_Database_Layer"
+        gitea_repo: "02_Database_Layer"
+        jenkins_jobs: ["02_Database_Layer"]
+      
+      - github_org: "soldesk260113-sol"
+        github_repo: "03_K8s_Infra"
+        gitea_repo: "03_K8s_Infra"
+        jenkins_jobs: ["03_K8s_Infra"]
+      
+      - github_org: "soldesk260113-sol"
+        github_repo: "04_App_CICD_Monitoring"
+        gitea_repo: "04_App_CICD_Monitoring"
+        jenkins_jobs: ["04_App_CICD_Monitoring"]
+      
+      - github_org: "soldesk260113-sol"
+        github_repo: "03_K8s_Infra"
+        gitea_repo: "03_K8s_Infra"
+        jenkins_jobs: 
+          - "Deploy-Energy-API(K8S)"
+          - "Deploy-KMA-API(K8S)"
+          - "Deploy-Web(K8S)"
+
+  tasks:
+    # ───────────────────────────────────────────────────────────────────────────
+    # 1. Prepare temporary directory
+    # ───────────────────────────────────────────────────────────────────────────
+    - name: 1. Create temporary directory
+      file:
+        path: "{{ temp_dir }}"
+        state: directory
+        mode: '0755'
+
+    # ───────────────────────────────────────────────────────────────────────────
+    # 2. Process each unique repository
+    # ───────────────────────────────────────────────────────────────────────────
+    - name: 2. Process Each Repository
+      include_tasks: ../tasks/migrate_github_repo.yml
+      loop: "{{ repo_mappings }}"
+      loop_control:
+        loop_var: repo
+
+    # ───────────────────────────────────────────────────────────────────────────
+    # 3. Cleanup
+    # ───────────────────────────────────────────────────────────────────────────
+    - name: 3. Cleanup temporary directory
+      file:
+        path: "{{ temp_dir }}"
+        state: absent

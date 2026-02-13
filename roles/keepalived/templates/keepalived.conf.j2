@@ -1,0 +1,34 @@
+global_defs {
+    router_id {{ inventory_hostname }}
+}
+
+vrrp_script chk_monitoring {
+    script "pkill -0 prometheus" 
+    interval 2
+    weight -60
+}
+
+vrrp_instance VI_1 {
+    state {{ 'MASTER' if inventory_hostname == 'Monitoring' else 'BACKUP' }}
+    interface {{ nic1_interface | default('ens160') }}
+    virtual_router_id 51
+    priority {{ '150' if inventory_hostname == 'Monitoring' else '100' }}
+    advert_int 1
+    
+    authentication {
+        auth_type PASS
+        auth_pass antigravity_ha
+    }
+    
+    virtual_ipaddress {
+        10.2.2.99
+    }
+
+    track_script {
+        chk_monitoring
+    }
+
+    notify_master "/usr/bin/wall '⚠️  [CRITICAL] Keepalived: I became MASTER! (10.2.2.99 is HERE)'"
+    notify_backup "/usr/bin/wall 'ℹ️  [INFO] Keepalived: I entered BACKUP state.'"
+    notify_fault  "/usr/bin/wall '🔥 [FAULT] Keepalived: Service Failed! Releasing VIP...'"
+}

@@ -1,0 +1,119 @@
+---
+# Harbor Docker Registry 설치 및 설정
+
+- name: 1. Docker 설치 (의존성)
+  include_role:
+    name: docker
+
+- name: 2. Docker Compose 독립 실행파일 설치
+  get_url:
+    url: https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64
+    dest: /usr/local/bin/docker-compose
+    mode: '0755'
+
+- name: 3. Harbor 설치 디렉토리 생성
+  file:
+    path: /opt/harbor
+    state: directory
+    mode: '0755'
+
+- name: 4. Harbor 설치 파일 다운로드
+  get_url:
+    url: https://github.com/goharbor/harbor/releases/download/v2.9.0/harbor-offline-installer-v2.9.0.tgz
+    dest: /tmp/harbor-offline-installer-v2.9.0.tgz
+    mode: '0644'
+  register: harbor_download
+
+- name: 5. Harbor 압축 해제
+  unarchive:
+    src: /tmp/harbor-offline-installer-v2.9.0.tgz
+    dest: /opt
+    remote_src: yes
+  when: harbor_download.changed
+
+- name: 6. Harbor 설정 파일 배포
+  template:
+    src: harbor.yml.j2
+    dest: /opt/harbor/harbor.yml
+    mode: '0644'
+
+- name: 7. Harbor 설치 스크립트 실행
+  shell: |
+    cd /opt/harbor
+    ./install.sh --with-trivy
+  args:
+    creates: /opt/harbor/common/config/core/env
+  register: harbor_install
+
+- name: 7-1. Harbor Systemd 서비스 파일 배포
+  template:
+    src: harbor.service.j2
+    dest: /etc/systemd/system/harbor.service
+    mode: '0644'
+  notify: Reload Systemd
+
+- name: 7-2. Harbor 서비스 활성화 및 시작
+  systemd:
+    name: harbor
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: 8. Harbor 서비스 시작 확인
+  shell: docker compose ps
+  args:
+    chdir: /opt/harbor
+  register: harbor_status
+  changed_when: false
+
+# - name: 9. Harbor 상태 출력
+#   debug:
+#     msg: "{{ harbor_status.stdout_lines }}"
+
+- name: 11. Firewall 포트 개방 (Harbor HTTP/HTTPS)
+  ansible.posix.firewalld:
+    port: "{{ item }}/tcp"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop:
+    - "{{ harbor_http_port }}"
+  ignore_errors: yes
+
+# - name: 12. Harbor 접속 정보 출력
+#   debug:
+#     msg:
+#       - "Harbor 설치 완료!"
+#       - "접속 URL: http://{{ harbor_hostname }}:{{ harbor_http_port }}"
+#       - "관리자 계정: admin"
+#       - "관리자 비밀번호: {{ harbor_admin_password }}"
+#       - "Docker 로그인: docker login {{ harbor_hostname }}:{{ harbor_http_port }}"
+
+# [추가됨] Production 네임스페이스가 없으면 에러가 나므로 먼저 확인/생성합니다.
+- name: 13. K8S Production 네임스페이스 확인 및 생성
+  shell: |
+    kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
+  delegate_to: K8S-ControlPlane1  # ⚠️ 중요: kubectl 명령어가 되는 서버 호스트명으로 변경하세요
+  run_once: true
+
+# [추가됨] 요청하신 Secret 생성 부분 (Idempotency를 위해 dry-run | apply 방식 적용)
+- name: 14. K8S Harbor Secret 생성 (harbor-secret)
+  shell: |
+    kubectl create secret docker-registry harbor-secret \
+      --docker-server=10.2.2.40:5000 \
+      --docker-username=admin \
+      --docker-password=Admin123 \
+      --docker-email=admin@example.com \
+      -n production \
+      --dry-run=client -o yaml | kubectl apply -f -
+  delegate_to: K8S-ControlPlane1  # ⚠️ 중요: kubectl 명령어가 되는 서버 호스트명으로 변경하세요
+  run_once: true
+  
+- name: Harbor 포트 포워딩 (172.16.6.61:5000 -> 10.2.2.40:5000)
+  ansible.posix.firewalld:
+    rich_rule: 'rule family="ipv4" forward-port port="5000" protocol="tcp" to-port="5000" to-addr="10.2.2.40"'
+    permanent: yes
+    immediate: yes
+    state: enabled
+  delegate_to: SECURE
+  run_once: true
