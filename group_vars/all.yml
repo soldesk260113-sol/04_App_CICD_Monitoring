@@ -41,3 +41,21 @@ syslog_server: 10.2.2.50
 
 # 타임존
 timezone: Asia/Seoul
+
+# ─────────────────────────────────────────────
+# Harbor Registry 접속 정보
+harbor_registry: "10.2.2.40:5000"
+harbor_user: "admin"
+harbor_pass: "Admin123"       # ← 실제 Harbor 비밀번호로 변경
+harbor_email: "admin@antigravity.com"
+
+# auth-chat-api Secret 변수
+# ⚠️ 실제 배포 전 반드시 값을 변경하세요!
+# ─────────────────────────────────────────────
+authchat_db_host: "10.2.2.254"
+authchat_db_port: "5432"
+authchat_db_name: "appdb"
+authchat_db_user: "api_app"
+authchat_db_pass: "CHANGE_ME_API_PASSWORD"  # ← 실제 DB 비밀번호로 변경
+authchat_jwt_secret: "CHANGE_ME_JWT_SECRET" # ← 실제 JWT 시크릿 키로 변경
+authchat_access_min: "120"
