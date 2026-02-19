@@ -17,7 +17,7 @@ spec:
       - name: harbor-secret
       containers:
       - name: web
-        image: 10.2.2.40:5000/library/web-v2-dashboard:latest-1
+        image: 10.2.2.40:5000/library/web-v2-dashboard:latest-4
         imagePullPolicy: Always
         ports:
         - containerPort: 80
