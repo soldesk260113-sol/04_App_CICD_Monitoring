@@ -94,7 +94,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ai-test
+  name: ai-rag
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -103,7 +103,7 @@ spec:
   source:
     repoURL: http://10.2.2.40:3001/admin/03_K8s_Infra.git
     targetRevision: HEAD
-    path: apps/ai-test/helm
+    path: apps/ai-rag/helm
   destination:
     server: https://kubernetes.default.svc
     namespace: production

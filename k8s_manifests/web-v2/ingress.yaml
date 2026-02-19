@@ -39,3 +39,10 @@ spec:
             name: energy-api
             port:
               number: 8000
+      - path: /api/ai(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: ai-rag
+            port:
+              number: 3000
