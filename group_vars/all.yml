@@ -56,6 +56,6 @@ authchat_db_host: "10.2.2.254"
 authchat_db_port: "5432"
 authchat_db_name: "appdb"
 authchat_db_user: "api_app"
-authchat_db_pass: "CHANGE_ME_API_PASSWORD"  # ← 실제 DB 비밀번호로 변경
+authchat_db_pass: "CHANGE_ME"  # ← 실제 DB 비밀번호로 변경
 authchat_jwt_secret: "CHANGE_ME_JWT_SECRET" # ← 실제 JWT 시크릿 키로 변경
 authchat_access_min: "120"
