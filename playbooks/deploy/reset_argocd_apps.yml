@@ -16,14 +16,14 @@
       debug:
         msg: "{{ delete_result.stdout_lines }}"
 
-    - name: Wait for deletion (15s)
-      pause:
-        seconds: 15
+    # - name: Wait for deletion (15s)
+    #   pause:
+    #     seconds: 15
 
-    - name: Apply ArgoCD Applications Fresh
-      shell: kubectl apply -f /root/argocd_apps.yaml
-      register: apply_result
+    # - name: Apply ArgoCD Applications Fresh
+    #   shell: kubectl apply -f /root/argocd_apps.yaml
+    #   register: apply_result
 
-    - name: Display Apply Result
-      debug:
-        msg: "{{ apply_result.stdout_lines }}"
+    # - name: Display Apply Result
+    #   debug:
+    #     msg: "{{ apply_result.stdout_lines }}"
